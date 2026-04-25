@@ -9,7 +9,7 @@
 | `gh` CLI authenticated to your GitHub account | The bootstrap script reads repo metadata, sets secrets, creates labels, and (optionally) configures branch protection via `gh api`. |
 | A GitHub repo created from this template | Click **Use this template** on `https://github.com/jk-nd/claude-code-setup`. |
 | `bash` 4+ (POSIX-compatible shells work) | `scripts/bootstrap.sh` is plain bash. |
-| (Optional) `ANTHROPIC_API_KEY` | Required only if you want agentic PR review to be live; the workflow degrades gracefully when the secret is missing. |
+| (Optional) `ANTHROPIC_API_KEY` | Required only if you want agentic PR review to be live; the workflow degrades gracefully when the secret is missing. **There are three auth choices** (paid key / `anthropics/claude-code-action` / skip review entirely) — see [README §Authentication](../README.md#authentication) for the trade-offs before you pick. |
 
 ## Step 1 — instantiate the template
 
