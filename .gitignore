@@ -5,6 +5,11 @@
 *.so
 *.dylib
 
+# Root-level binaries from `go build ./...`. Each `cmd/<tool>/` package
+# produces a binary at the repo root by default; matching the package
+# directory names keeps them out of the index without an allowlist.
+/agentic-review
+
 # Test binary, built with `go test -c`
 *.test
 
