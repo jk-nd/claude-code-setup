@@ -9,16 +9,19 @@
 | Where it runs | `.github/workflows/agentic-review.yml` |
 | What it touches | One sticky comment per PR (marker `<!-- agentic-review:sticky -->`) |
 | What it does **not** touch | Branch contents, labels, reviews, merges, anything outside the comment |
-| Skip per-PR | Apply the label `agentic-review:skip` |
-| Required secret | `ANTHROPIC_API_KEY` in repo settings |
+| Repo-level on/off | Set repo variable `AGENTIC_REVIEW_ENABLED=true` (Settings → Secrets and variables → Variables). Unset = silent. |
+| Skip per-PR | Apply the label `agentic-review:skip` (or keep PR draft) |
+| Required secret | `ANTHROPIC_API_KEY` in repo settings (only if `AGENTIC_REVIEW_ENABLED=true`) |
 | Cost ballpark | ~$0.05–$0.20 per PR push at current Opus pricing |
 
 ## What it does
 
 ```mermaid
 flowchart LR
-    A[PR push / open / ready] --> B{Draft?}
-    B -- yes --> Z[skip]
+    A[PR push / open / ready] --> AA{AGENTIC_REVIEW_ENABLED<br/>repo var = true?}
+    AA -- no --> Z[skip]
+    AA -- yes --> B{Draft?}
+    B -- yes --> Z
     B -- no --> C{Has label<br/>agentic-review:skip?}
     C -- yes --> Z
     C -- no --> D[checkout PR HEAD]
@@ -129,7 +132,8 @@ The workflow exits 0 in all of these cases — the read-only review must never b
 
 | Cause | Behaviour |
 | --- | --- |
-| `ANTHROPIC_API_KEY` secret not set | Posts a degraded sticky comment explaining the missing secret; no API call is made. |
+| `AGENTIC_REVIEW_ENABLED` repo variable is unset / not `'true'` | Job is skipped (no comment). This is the **default state** for a freshly-instantiated template — the operator must opt in. |
+| `ANTHROPIC_API_KEY` secret not set (but enabled) | Posts a degraded sticky comment explaining the missing secret; no API call is made. |
 | Anthropic API call fails (5xx, timeout, malformed response) | Posts a degraded sticky comment with a redacted error excerpt; the next push retries automatically. |
 | The PR is a draft | Job is skipped (no comment). |
 | The PR has the `agentic-review:skip` label | Job is skipped (no comment). |
@@ -148,10 +152,12 @@ These guarantees come from the workflow's `permissions:` block, not the binary's
 
 ## Operator setup checklist
 
-1. Ensure `ANTHROPIC_API_KEY` is set as a repo secret (Settings → Secrets and variables → Actions). The bootstrap script (`scripts/bootstrap.sh`) does this.
-2. Optional: create the `agentic-review:skip` label (the workflow gracefully tolerates its absence).
-3. Open or push a PR. The job runs automatically.
-4. After one week, review the sticky-comment shape on closed PRs to decide whether to invest in any auto-fix tooling beyond this read-only baseline.
+1. **Decide whether to run agentic review on this repo.** The template ships the workflow disabled by default; you opt in by setting the `AGENTIC_REVIEW_ENABLED` repo variable to `'true'` (Settings → Secrets and variables → **Variables** tab — note: it's a *variable*, not a *secret*, because there's no sensitive value).
+2. If enabled: ensure `ANTHROPIC_API_KEY` is set as a repo *secret* (Settings → Secrets and variables → **Secrets** tab). The bootstrap script (`scripts/bootstrap.sh`) prompts for both.
+3. Optional: create the `agentic-review:skip` label (the workflow gracefully tolerates its absence).
+4. Open or push a PR. The job runs automatically when enabled.
+5. To turn off temporarily: unset `AGENTIC_REVIEW_ENABLED` (or set to anything other than `'true'`). No code change required.
+6. After one week of running with the variable on, review the sticky-comment shape on closed PRs to decide whether to invest in any auto-fix tooling beyond this read-only baseline.
 
 ## Related
 

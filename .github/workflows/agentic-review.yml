@@ -29,9 +29,17 @@ jobs:
   review:
     name: agentic-review
     runs-on: ubuntu-latest
-    # Skip drafts (matches trust-boundary gate semantics) and skip when
-    # the operator has applied the `agentic-review:skip` label.
+    # Repo-level opt-in gate. The workflow is silent unless the operator
+    # has set the `AGENTIC_REVIEW_ENABLED` repo variable to `'true'`
+    # (Settings → Secrets and variables → Variables). This keeps a
+    # freshly-instantiated template safe from running an empty-key
+    # review and posting degraded comments before the operator has
+    # decided whether to use the workflow.
+    #
+    # Per-PR opt-out: skip drafts, skip when the operator has applied
+    # the `agentic-review:skip` label.
     if: >-
+      vars.AGENTIC_REVIEW_ENABLED == 'true' &&
       github.event.pull_request.draft == false &&
       !contains(github.event.pull_request.labels.*.name, 'agentic-review:skip')
     timeout-minutes: 10

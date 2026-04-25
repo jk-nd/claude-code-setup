@@ -9,8 +9,9 @@
 | What you get | Agentic PR review (read-only), trust-boundary CI gate, CODEOWNERS, issue + PR templates, `AGENTS.md` operating principles, bootstrap script |
 | What you bring | A language-specific `ci.yml` (template ships a Go example), team handles, branch-protection settings |
 | How to start | Click "Use this template" on GitHub, then run `scripts/bootstrap.sh` |
-| Required secret | `ANTHROPIC_API_KEY` (optional — see the [Authentication](#authentication) section for three choices) |
-| Cost ceiling | Per-PR review capped at ~$0.83 worst case; opt-out via the `agentic-review:skip` label |
+| Required secret | `ANTHROPIC_API_KEY` (only if you opt in to agentic review — see [Authentication](#authentication)) |
+| Repo-level review on/off | Variable `AGENTIC_REVIEW_ENABLED=true` to turn it on; unset to turn off. **Default: off.** |
+| Cost ceiling | Per-PR review capped at ~$0.83 worst case; opt-out per-PR via the `agentic-review:skip` label |
 
 ## What this gives you
 
@@ -62,12 +63,12 @@ See [`docs/operating.md`](docs/operating.md) for the step-by-step walkthrough, i
 3. Run `scripts/bootstrap.sh`. The script will:
    - Detect owner/name from `gh repo view`.
    - Substitute `${OWNER}`, `${REPO}`, `${WATCHED_PATHS}` placeholders across `*.template` files and rename them to their final names.
-   - Prompt for `ANTHROPIC_API_KEY` and set it via `gh secret set`.
+   - Prompt whether to enable **agentic PR review** for this repo. If yes, it sets the `AGENTIC_REVIEW_ENABLED=true` repo variable and prompts for `ANTHROPIC_API_KEY`. If no, the workflow ships in the repo but stays silent until you opt in later.
    - Create the `compliance-review` label.
    - Optionally create initial branch protection on `main`.
 4. Replace the Go-flavoured `.github/workflows/ci.yml` with one for your stack (the template ships a Go example as a starting point).
 5. Edit `.github/CODEOWNERS` to reference your real team handles.
-6. Open a PR and watch the agentic-review and trust-boundary workflows fire.
+6. Open a PR and watch the trust-boundary workflow fire (and agentic-review if you opted in).
 
 See [`docs/setup.md`](docs/setup.md) for a step-by-step walkthrough and troubleshooting.
 
@@ -118,7 +119,9 @@ Anthropic ships a first-party action at [`anthropics/claude-code-action`](https:
 
 ### Option C — skip agentic review entirely
 
-Disable the `agentic-review.yml` workflow (or simply leave the `ANTHROPIC_API_KEY` secret unset — the bundled binary degrades gracefully and posts a "Status: degraded — ANTHROPIC_API_KEY secret is not set" sticky instead of calling the API). The trust-boundary CI gate and standard CI continue to work; you lose the read-only PR review automation but keep the compliance-routing and quality gates.
+The template ships with the workflow gated on the `AGENTIC_REVIEW_ENABLED` repo variable. **If you don't set that variable, the workflow is silent** — it runs the trigger but the job's `if:` evaluates to false, so no checkout, no API call, no comment. The trust-boundary CI gate and standard CI continue to work; you lose the read-only PR review automation but keep the compliance-routing and quality gates.
+
+To turn it on later: set the `AGENTIC_REVIEW_ENABLED` variable to `'true'` (Settings → Secrets and variables → Variables) and supply `ANTHROPIC_API_KEY`. To turn it off again: unset the variable.
 
 - **Cost:** $0.
 - **Best for:** teams not yet ready to commit to API spend or to a third-party action, but who want the trust-boundary gate today.

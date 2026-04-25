@@ -221,32 +221,66 @@ for t in "${INLINE_TARGETS[@]}"; do
 done
 
 # -----------------------------------------------------------------
-# Step: ANTHROPIC_API_KEY secret
+# Step: agentic-review opt-in (variable + secret)
 # -----------------------------------------------------------------
+#
+# The workflow ships gated on the AGENTIC_REVIEW_ENABLED repo variable
+# so a freshly-instantiated template stays silent until the operator
+# explicitly opts in. We ask once here; everything below is a no-op if
+# the operator declines.
 
 echo
-echo "ANTHROPIC_API_KEY enables the agentic-review workflow."
-echo "Leave empty to skip (the workflow will degrade gracefully)."
-printf "Anthropic API key (input hidden): "
-# Read with -s if supported (bash). Fall back to plain read otherwise.
-if [ -n "${BASH_VERSION:-}" ]; then
-    read -r -s ANTHROPIC_KEY
-    echo
-else
-    read -r ANTHROPIC_KEY
-fi
+echo "Agentic review (read-only Claude PR review) is OFF by default."
+printf "Enable it for this repo? [y/N] "
+read -r ENABLE_AGENTIC_REVIEW
+case "$ENABLE_AGENTIC_REVIEW" in
+    [yY]|[yY][eE][sS]) ENABLE_AGENTIC_REVIEW="yes" ;;
+    *) ENABLE_AGENTIC_REVIEW="no" ;;
+esac
 
-if [ -n "$ANTHROPIC_KEY" ]; then
-    echo "Setting secret ANTHROPIC_API_KEY on $OWNER/$REPO..."
-    if printf '%s' "$ANTHROPIC_KEY" | gh secret set ANTHROPIC_API_KEY --repo "$OWNER/$REPO" --body -; then
+if [ "$ENABLE_AGENTIC_REVIEW" = "yes" ]; then
+    echo "Setting variable AGENTIC_REVIEW_ENABLED=true on $OWNER/$REPO..."
+    if gh variable set AGENTIC_REVIEW_ENABLED --repo "$OWNER/$REPO" --body "true" >/dev/null 2>&1; then
         echo "  ok"
     else
-        echo "  error: failed to set secret. You can set it later via:" >&2
-        echo "    gh secret set ANTHROPIC_API_KEY --repo $OWNER/$REPO" >&2
+        # Fall back to REST if the gh subcommand is unavailable.
+        if gh api -X POST "/repos/$OWNER/$REPO/actions/variables" \
+            -f name=AGENTIC_REVIEW_ENABLED -f value=true >/dev/null 2>&1; then
+            echo "  ok (via REST)"
+        else
+            echo "  error: failed to set variable. Set it later via:" >&2
+            echo "    gh variable set AGENTIC_REVIEW_ENABLED --repo $OWNER/$REPO --body true" >&2
+        fi
+    fi
+
+    echo
+    echo "ANTHROPIC_API_KEY is required for the workflow to call Claude."
+    echo "Leave empty to defer (the workflow will degrade gracefully)."
+    printf "Anthropic API key (input hidden): "
+    # Read with -s if supported (bash). Fall back to plain read otherwise.
+    if [ -n "${BASH_VERSION:-}" ]; then
+        read -r -s ANTHROPIC_KEY
+        echo
+    else
+        read -r ANTHROPIC_KEY
+    fi
+
+    if [ -n "$ANTHROPIC_KEY" ]; then
+        echo "Setting secret ANTHROPIC_API_KEY on $OWNER/$REPO..."
+        if printf '%s' "$ANTHROPIC_KEY" | gh secret set ANTHROPIC_API_KEY --repo "$OWNER/$REPO" --body -; then
+            echo "  ok"
+        else
+            echo "  error: failed to set secret. Set it later via:" >&2
+            echo "    gh secret set ANTHROPIC_API_KEY --repo $OWNER/$REPO" >&2
+        fi
+    else
+        echo "Skipped. Set later with:"
+        echo "  gh secret set ANTHROPIC_API_KEY --repo $OWNER/$REPO"
     fi
 else
-    echo "Skipped. Set later with:"
-    echo "  gh secret set ANTHROPIC_API_KEY --repo $OWNER/$REPO"
+    echo "Agentic review left disabled. Enable it later with:"
+    echo "  gh variable set AGENTIC_REVIEW_ENABLED --repo $OWNER/$REPO --body true"
+    echo "  gh secret set   ANTHROPIC_API_KEY     --repo $OWNER/$REPO"
 fi
 
 # -----------------------------------------------------------------
