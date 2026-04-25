@@ -1,0 +1,45 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (uncomment when using Go modules)
+# vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Build output
+/build/
+/dist/
+/bin/
+
+# Local scratch files
+*.tmp
+*.bak
+*.swp
+
+# Environment / secrets
+.env
+.env.local
+.envrc
+*.pem
+*.key
+
+# IDE / editor
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Logs
+*.log

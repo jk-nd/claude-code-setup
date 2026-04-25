@@ -1,0 +1,26 @@
+# Code ownership and review routing.
+#
+# Order matters: more specific rules below override the global rule
+# above them. The wildcard at the bottom guarantees every PR still gets
+# human eyes if no specific rule matches.
+#
+# `@${OWNER}/compliance-review` is the placeholder team for compliance-
+# sensitive paths. The team must be created in your GitHub org and
+# populated with the designated compliance reviewers before branch
+# protection on `main` can enforce it. Until the team exists, GitHub
+# silently drops the entry and only @${OWNER} is requested.
+
+# Compliance-sensitive paths — require both the global owner and the
+# compliance-review team. These mirror the watched paths in
+# `.github/workflows/trust-boundary.yml`. The bootstrap script
+# substitutes ${WATCHED_PATHS_AS_CODEOWNER_LINES} with one CODEOWNERS
+# line per watched path glob.
+#
+# Example shape (the bootstrap script writes lines like these):
+#   /internal/policy/             @${OWNER} @${OWNER}/compliance-review
+#   /internal/audit/              @${OWNER} @${OWNER}/compliance-review
+#
+${WATCHED_PATHS_AS_CODEOWNER_LINES}
+
+# Global fallback. Ensures every PR gets human eyes before merge.
+*       @${OWNER}

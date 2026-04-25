@@ -1,0 +1,237 @@
+name: Trust-boundary gate
+
+# Compliance gate for PRs that touch trust-boundary surfaces.
+#
+# Customise this workflow at template-instantiation time:
+#   1. Replace the `paths:` list under `on.pull_request` with the path
+#      globs that should trip the gate in your project. The list below
+#      shows ${WATCHED_PATHS} as a placeholder; the bootstrap script
+#      substitutes it with the project-specific globs you supply.
+#   2. Update the `watched` array inside the `Compute compliance-sensitive
+#      paths touched` step to match — it is the source of truth for the
+#      sticky-comment summary, paired with human-readable area labels.
+#   3. Replace the `${FRAMEWORKS}` placeholder list inside the sticky-
+#      comment template with the compliance frameworks relevant to your
+#      project (e.g. ISO 27001, SOC 2, GDPR, EU AI Act, NIST 800-53,
+#      HIPAA, PCI-DSS), or remove the framework section entirely if your
+#      project does not have a compliance posture worth surfacing.
+#
+# The gate PASSES when at least one of the following is true:
+#   1. The PR is a draft (no enforcement until ready for review).
+#   2. The PR carries the `compliance-review` label.
+#   3. A user or member of the `compliance-review` team has submitted a
+#      review with state APPROVED on the PR's HEAD.
+#
+# Otherwise the gate FAILS with a message naming the touched paths and
+# the implicated frameworks. A sticky comment summarising the watched
+# paths touched by the PR is posted (and updated in place) on every run.
+#
+# Branch protection: this workflow is NOT a required check by default.
+# To make it block merges, mark `trust-boundary-gate` as a required
+# status check in GitHub branch-protection settings for `main`. The
+# bootstrap script offers to do this for you.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+    paths:
+      # ${WATCHED_PATHS} — replace with project-specific globs.
+      # Example shape (uncomment / edit to match your project):
+      # - 'internal/policy/**'
+      # - 'internal/audit/**'
+      # - 'internal/auth/**'
+      # - 'docs/design/**'
+      - 'PLACEHOLDER_DELETE_ME/**'
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  trust-boundary-gate:
+    name: trust-boundary-gate
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Compute compliance-sensitive paths touched
+        id: paths
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+            const pr    = context.payload.pull_request
+              ?? (await github.rest.pulls.get({
+                   owner, repo,
+                   pull_number: context.payload.review.pull_request.number,
+                 })).data;
+
+            // ${WATCHED_PATHS} — replace with project-specific globs +
+            // their human-readable area labels. Each entry must have a
+            // `glob` (path prefix) and an `area` (label for the sticky
+            // comment grouping).
+            const watched = [
+              { glob: 'PLACEHOLDER_DELETE_ME/', area: 'placeholder area (replace me)' },
+            ];
+
+            const files = await github.paginate(
+              github.rest.pulls.listFiles,
+              { owner, repo, pull_number: pr.number, per_page: 100 },
+            );
+
+            const hits = [];
+            for (const f of files) {
+              for (const w of watched) {
+                if (f.filename.startsWith(w.glob)) {
+                  hits.push({ path: f.filename, area: w.area });
+                  break;
+                }
+              }
+            }
+
+            core.setOutput('hit_count', String(hits.length));
+            core.setOutput('hits_json', JSON.stringify(hits));
+            core.setOutput('pr_number', String(pr.number));
+            core.setOutput('pr_head_sha', pr.head.sha);
+
+      - name: Check for compliance-review label or approval
+        id: gate
+        if: steps.paths.outputs.hit_count != '0'
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER:   ${{ steps.paths.outputs.pr_number }}
+          PR_HEAD_SHA: ${{ steps.paths.outputs.pr_head_sha }}
+        with:
+          script: |
+            const owner   = context.repo.owner;
+            const repo    = context.repo.repo;
+            const prNum   = parseInt(process.env.PR_NUMBER, 10);
+            const headSha = process.env.PR_HEAD_SHA;
+
+            // 1. Label check.
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner, repo, issue_number: prNum,
+            });
+            const hasLabel = labels.some(l => l.name === 'compliance-review');
+
+            // 2. Approval check. Any APPROVED review on the current head
+            // from a user is sufficient signal. Branch protection is the
+            // authoritative team-membership check; this gate only needs
+            // to confirm a human has signed off after the trip.
+            const reviews = await github.paginate(
+              github.rest.pulls.listReviews,
+              { owner, repo, pull_number: prNum, per_page: 100 },
+            );
+            const approvedOnHead = reviews.some(
+              r => r.state === 'APPROVED' && r.commit_id === headSha,
+            );
+
+            core.setOutput('has_label',         String(hasLabel));
+            core.setOutput('approved_on_head',  String(approvedOnHead));
+            core.setOutput('passes', String(hasLabel || approvedOnHead));
+
+      - name: Post or update sticky summary comment
+        if: steps.paths.outputs.hit_count != '0'
+        uses: actions/github-script@v7
+        env:
+          HITS_JSON:        ${{ steps.paths.outputs.hits_json }}
+          PR_NUMBER:        ${{ steps.paths.outputs.pr_number }}
+          HAS_LABEL:        ${{ steps.gate.outputs.has_label }}
+          APPROVED_ON_HEAD: ${{ steps.gate.outputs.approved_on_head }}
+          PASSES:           ${{ steps.gate.outputs.passes }}
+        with:
+          script: |
+            const owner   = context.repo.owner;
+            const repo    = context.repo.repo;
+            const prNum   = parseInt(process.env.PR_NUMBER, 10);
+            const hits    = JSON.parse(process.env.HITS_JSON);
+            const passes  = process.env.PASSES === 'true';
+            const label   = process.env.HAS_LABEL === 'true';
+            const approve = process.env.APPROVED_ON_HEAD === 'true';
+
+            const marker = '<!-- trust-boundary-gate:sticky -->';
+
+            // Group hits by area for readability.
+            const byArea = new Map();
+            for (const h of hits) {
+              if (!byArea.has(h.area)) byArea.set(h.area, []);
+              byArea.get(h.area).push(h.path);
+            }
+
+            const lines = [];
+            lines.push(marker);
+            lines.push('## Trust-boundary CI gate');
+            lines.push('');
+            lines.push(passes
+              ? 'Status: **PASS**'
+              : 'Status: **PENDING** (compliance review required before merge)');
+            lines.push('');
+            lines.push('| Signal | Present |');
+            lines.push('| --- | --- |');
+            lines.push(`| \`compliance-review\` label | ${label ? 'yes' : 'no'} |`);
+            lines.push(`| Approved review on current HEAD | ${approve ? 'yes' : 'no'} |`);
+            lines.push('');
+            lines.push('### Compliance-sensitive paths touched');
+            lines.push('');
+            for (const [area, paths] of byArea) {
+              lines.push(`**${area}**`);
+              lines.push('');
+              for (const p of paths) lines.push(`- \`${p}\``);
+              lines.push('');
+            }
+            lines.push('### Frameworks implicated');
+            lines.push('');
+            // ${FRAMEWORKS} — replace with project-relevant compliance
+            // frameworks, or delete this section entirely if your project
+            // has no compliance posture to surface here.
+            lines.push('- (placeholder — list project-relevant frameworks here, e.g. ISO 27001, SOC 2, GDPR, EU AI Act, NIST 800-53)');
+            lines.push('');
+            lines.push('To clear the gate, either apply the `compliance-review` label or have a designated compliance reviewer approve this PR. See `.github/workflows/trust-boundary.yml`.');
+
+            const body = lines.join('\n');
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              { owner, repo, issue_number: prNum, per_page: 100 },
+            );
+            const existing = comments.find(c => c.body && c.body.startsWith(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: prNum, body,
+              });
+            }
+
+      - name: Enforce gate
+        if: steps.paths.outputs.hit_count != '0'
+        env:
+          PASSES:    ${{ steps.gate.outputs.passes }}
+          HITS_JSON: ${{ steps.paths.outputs.hits_json }}
+        run: |
+          if [ "${PASSES}" = "true" ]; then
+            echo "trust-boundary-gate: cleared (label or approval present)"
+            exit 0
+          fi
+          echo "trust-boundary-gate: BLOCKED" >&2
+          echo "" >&2
+          echo "This PR touches compliance-sensitive paths and has neither the" >&2
+          echo "'compliance-review' label nor an approved review from a designated" >&2
+          echo "compliance reviewer on the current HEAD." >&2
+          echo "" >&2
+          echo "Watched paths touched (raw):" >&2
+          printf '%s\n' "${HITS_JSON}" >&2
+          echo "" >&2
+          echo "See .github/workflows/trust-boundary.yml for the watched-paths configuration." >&2
+          exit 1
+
+      - name: No watched paths touched
+        if: steps.paths.outputs.hit_count == '0'
+        run: |
+          echo "trust-boundary-gate: no compliance-sensitive paths touched; skipping."

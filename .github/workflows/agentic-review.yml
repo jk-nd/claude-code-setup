@@ -1,0 +1,61 @@
+name: agentic-review
+
+# Read-only agentic PR review.
+# An auxiliary Go binary (cmd/agentic-review) reads the PR's diff,
+# linked issue, and CI check-run summary, calls the Anthropic Messages
+# API, and posts a sticky comment summarising the findings. The agent
+# never pushes commits, never modifies labels, never bypasses the
+# trust-boundary gate.
+#
+# Operator opt-out: apply the `agentic-review:skip` label to a PR.
+# Documentation: docs/agentic-review.md.
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+# Cancel an in-flight run on the same PR when a fresh push lands; the
+# review only ever needs to reflect the latest HEAD.
+concurrency:
+  group: agentic-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: agentic-review
+    runs-on: ubuntu-latest
+    # Skip drafts (matches trust-boundary gate semantics) and skip when
+    # the operator has applied the `agentic-review:skip` label.
+    if: >-
+      github.event.pull_request.draft == false &&
+      !contains(github.event.pull_request.labels.*.name, 'agentic-review:skip')
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Build agentic-review binary
+        run: go build -o /tmp/agentic-review ./cmd/agentic-review
+
+      - name: Run review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: /tmp/agentic-review
