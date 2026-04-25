@@ -10,8 +10,8 @@ func TestParseClosesRef(t *testing.T) {
 		body string
 		want int
 	}{
-		{"Closes #251", 251},
-		{"closes  #42 — and more", 42},
+		{"Closes #42", 42},
+		{"closes  #11 — and more", 11},
 		{"Resolves #7\nFixes #99", 7},
 		{"This PR fixes #18 in passing", 18},
 		{"Refs #5 (no closes/fixes)", 0},
@@ -46,9 +46,9 @@ func TestExtractPathRefs(t *testing.T) {
 }
 
 func TestExtractIssueRefs(t *testing.T) {
-	body := "Closes #251. See also #42 and #7. (#5)"
+	body := "Closes #42. See also #7 and #5. (#11)"
 	got := extractIssueRefs(body)
-	want := []int{251, 42, 7, 5}
+	want := []int{42, 7, 5, 11}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
@@ -215,39 +215,39 @@ func TestSystemPromptListsAllSixDimensions(t *testing.T) {
 
 func TestBuildPromptIncludesCoreSections(t *testing.T) {
 	pr := &pullRequest{
-		Number:  207,
+		Number:  42,
 		Title:   "feat(ci): add trust-boundary gate",
-		Body:    "Closes #196. See `internal/audit/emitter.go`.",
-		HTMLURL: "https://example.com/pulls/207",
+		Body:    "Closes #42. See `internal/example/emitter.go`.",
+		HTMLURL: "https://example.com/pulls/42",
 	}
 	pr.Head.SHA = "abc123"
 	pr.Base.Ref = "main"
 	files := []prFile{
-		{Filename: "internal/audit/emitter.go", Status: "modified", Additions: 5, Patch: "+ x\n"},
+		{Filename: "internal/example/emitter.go", Status: "modified", Additions: 5, Patch: "+ x\n"},
 	}
 	checks := []checkRun{{Name: "lint", Status: "completed", Conclusion: "success"}}
-	linked := &issue{Number: 196, Title: "Trust-boundary gate", Body: "Acceptance criteria…"}
+	linked := &issue{Number: 42, Title: "Trust-boundary gate", Body: "Acceptance criteria…"}
 	c := staticChecks{
-		ProductionWithoutTests: []string{"internal/audit"},
+		ProductionWithoutTests: []string{"internal/example"},
 		UnresolvedPaths:        []string{"docs/missing.md"},
-		UnresolvedIssues:       []int{42},
-		TouchedSensitive:       []string{"internal/audit/emitter.go"},
-		StaleReferences:        []string{"#62"},
+		UnresolvedIssues:       []int{11},
+		TouchedSensitive:       []string{"internal/example/emitter.go"},
+		StaleReferences:        []string{"#13"},
 	}
 	prompt := buildPrompt(pr, files, checks, linked, c)
 	for _, want := range []string{
-		"PR #207",
+		"PR #42",
 		"feat(ci)",
-		"Closes #196",
+		"Closes #42",
 		"## CI check runs",
 		"lint: status=completed conclusion=success",
-		"## Linked issue #196",
+		"## Linked issue #42",
 		"## Static checks",
-		"`internal/audit`",
+		"`internal/example`",
 		"`docs/missing.md`",
-		"#42",
-		"`internal/audit/emitter.go`",
-		"#62",
+		"#11",
+		"`internal/example/emitter.go`",
+		"#13",
 		"## Diff",
 		"+ x",
 	} {

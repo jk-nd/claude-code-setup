@@ -76,7 +76,7 @@ The list should mirror the watched paths in `.github/workflows/trust-boundary.ym
 ## Passes
 
 - Lint clean (CI lint job: success).
-- Issue refs resolve (#196).
+- Issue refs resolve (#42).
 - Stale-claim check: no `uses #N` in body.
 
 ## Concerns
