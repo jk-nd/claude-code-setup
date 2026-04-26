@@ -17,7 +17,23 @@ flowchart TB
     H -->|approve + merge| M[main]
 ```
 
-The model in one paragraph: **a single human-driven orchestrator files GitHub issues; autonomous subagents pick up one issue each, work on isolated worktrees, verify locally, and open draft PRs. The orchestrator (a human) is the only entity that merges.** Agents never merge their own PRs, never force-push, never modify CI/trust-boundary infrastructure without explicit instruction.
+The model in one paragraph: **a single human-driven orchestrator files GitHub issues; autonomous subagents pick up one issue each, work on isolated worktrees, verify locally, and open draft PRs.**
+
+## Roles
+
+Three distinct roles operate in this template. Each has different merge authority. Subagents (including any Cursor agents, GitHub Actions agents, or Claude Code subagents the orchestrator spawns) must NOT self-merge — that is the **single most-violated rule** in early-template instances.
+
+| Role | Examples | Can merge? |
+| --- | --- | --- |
+| **Human** | The repo owner / maintainer driving the operating-day | Always — final authority |
+| **Orchestrator** | A long-running Claude session (or other supervisor agent) that the human delegates the day's work to. Files issues, spawns subagents, coordinates reviews, merges after explicit human authorisation | Yes — after **explicit human authorisation** for that day's work. Never merges its OWN PR. |
+| **Subagent** | Any short-lived agent the orchestrator spawns: Claude subagents, Cursor's coding agents, GitHub Actions agents | **Never.** Opens draft PRs only. The orchestrator or human reviews + merges. |
+
+### The author-merger rule
+
+**The merger of a PR must NOT be the same identity as the PR's author.** This is enforced (preventively) by GitHub branch protection requiring an approval from a non-author, AND surfaced (post-fact) by the agentic-review's "process violation" check. Even an orchestrator may not merge its own PRs — those need a human, or a different orchestrator session with human authorisation.
+
+Why: subagents (and Cursor) have repeatedly self-merged in early operating-day sessions. The author-merger rule plus branch protection together close that gap. Without it, the discipline of "draft PRs, human merges" decays into "agent ships unreviewed."
 
 ## Subagent rules
 
@@ -42,7 +58,7 @@ A subagent is a process (Claude or otherwise) given exactly one issue and exactl
 
   **Why this is non-negotiable:** CI runs `-race`, runs `go mod tidy && git diff --exit-code`, and may run a coverage gate that fails on regression. A passing local `go test ./...` is not equivalent. Agents that skip these have shipped PRs that were red on CI for hours before a human triaged. **Belt-and-braces: the strict recipe, not the loose one.**
 - **Open a draft PR** when ready. Mark ready-for-review only when the orchestrator instructs.
-- **Never merge.** The orchestrator merges. Period.
+- **Never merge.** Subagents do not merge — period, regardless of how trivial the change. See the [Roles](#roles) section above for the three-role model and the author-merger rule.
 - **Never force-push** unless the orchestrator explicitly asks.
 - **Never modify the trust-boundary CI gate workflow** (`.github/workflows/trust-boundary.yml`) or the agentic-review workflow without explicit instruction. These are compliance-relevant infrastructure.
 - **Never close the linked issue manually.** Merging the PR closes it via `Closes #N`.
