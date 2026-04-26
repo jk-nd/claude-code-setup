@@ -25,7 +25,22 @@ A subagent is a process (Claude or otherwise) given exactly one issue and exactl
 
 - **Branch from the latest `origin/main`.** Always rebase onto `origin/main` before pushing.
 - **Work in `/tmp/<scratch-name>`** or another scratch directory. Never use the orchestrator's main checkout.
-- **Verify before push.** Run the project's full local check suite — build, test, vet, lint — and ensure all pass before opening a PR. Do not rely on CI to catch lint errors; install the linter locally and run it.
+- **Verify before push — full recipe.** Run **every gate CI runs**, locally, before opening a PR. The default `go test ./...` is insufficient — CI runs stricter. The minimum recipe for a Go project (adapt for other stacks):
+
+  ```sh
+  go build ./...
+  go vet ./...
+  go test ./... -short -timeout=300s -count=1            # baseline
+  go test -race -count=1 -timeout=600s ./...             # CI runs -race; skipping = race-condition surprises in CI
+  go mod tidy && git diff --exit-code go.mod go.sum      # CI fails if tidy produces a diff
+  golangci-lint run --timeout=5m ./...                   # install locally; do not rely on CI
+  # Plus any project-specific gates the CI runs:
+  #   - go test -tags e2e ./test/e2e/...                 (if the project ships an e2e tag)
+  #   - go test -coverprofile=cov.out ./... && go run ./cmd/coverage-gate ...   (if a coverage gate exists)
+  #   - go test -fuzz=FuzzX -fuzztime=60s ./pkg          (if fuzz targets exist that CI exercises)
+  ```
+
+  **Why this is non-negotiable:** CI runs `-race`, runs `go mod tidy && git diff --exit-code`, and may run a coverage gate that fails on regression. A passing local `go test ./...` is not equivalent. Agents that skip these have shipped PRs that were red on CI for hours before a human triaged. **Belt-and-braces: the strict recipe, not the loose one.**
 - **Open a draft PR** when ready. Mark ready-for-review only when the orchestrator instructs.
 - **Never merge.** The orchestrator merges. Period.
 - **Never force-push** unless the orchestrator explicitly asks.
