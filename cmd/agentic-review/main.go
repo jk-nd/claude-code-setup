@@ -4,10 +4,15 @@
 // request's metadata and diff via the GitHub REST API, fetches the
 // linked issue (if a `closes #N` reference is present in the body) and
 // the CI check runs for the PR's HEAD, builds a structured prompt,
-// calls the Anthropic Messages API, and posts the markdown response as
-// a sticky comment on the PR. The workflow exits 0 even on API
-// failures so that agent infrastructure issues do not block CI for
-// everyone else.
+// calls one of the supported LLM backends (Anthropic Messages API
+// direct, or GitHub Models OpenAI-compatible inference), and posts
+// the markdown response as a sticky comment on the PR. The workflow
+// exits 0 even on API failures so that agent infrastructure issues do
+// not block CI for everyone else.
+//
+// Backend selection happens once at startup via selectBackend; see
+// backend_anthropic.go and backend_github_models.go for the two
+// adapters that share the ReviewBackend interface.
 //
 // The agent is read-only by design: it never pushes commits, never
 // modifies labels, never bypasses the trust-boundary gate.
@@ -37,38 +42,17 @@ import (
 // sticky-comment pattern from `.github/workflows/trust-boundary.yml`.
 const stickyMarker = "<!-- agentic-review:sticky -->"
 
-// anthropicModel pins the snapshot used by the review. Pinning by
-// snapshot guarantees reproducibility across the workflow's lifetime
-// even as Anthropic ships new defaults; bump deliberately.
-const anthropicModel = "claude-opus-4-7-1m"
-
-// anthropicEndpoint is the Messages API. Stdlib net/http + encoding/json
-// is sufficient — we deliberately avoid pulling in another module
-// dependency so the binary stays drop-in across template instantiations.
-const anthropicEndpoint = "https://api.anthropic.com/v1/messages"
-
-// anthropicVersion is the dated wire-format header expected by the API.
-const anthropicVersion = "2023-06-01"
-
 // Cost guard limits. Diff is truncated to fit within the input cap and
 // the output is hard-capped at 2K tokens. Both are documented in
 // docs/agentic-review.md so operators know the per-PR ceiling.
 const (
-	maxInputTokensApprox  = 50_000
-	maxOutputTokens       = 2_000
-	largeFileLineCutoff   = 200
-	approxCharsPerToken   = 4
-	maxDiffCharsBudget    = maxInputTokensApprox * approxCharsPerToken
-	httpTimeout           = 90 * time.Second
-	anthropicCallDeadline = 4 * time.Minute
-)
-
-// Approximate Anthropic Opus pricing in USD per 1M tokens. Used to
-// estimate review cost; the operator-facing doc warns that this is an
-// estimate and the authoritative number lives at anthropic.com/pricing.
-const (
-	usdPerMTokIn  = 15.0
-	usdPerMTokOut = 75.0
+	maxInputTokensApprox = 50_000
+	maxOutputTokens      = 2_000
+	largeFileLineCutoff  = 200
+	approxCharsPerToken  = 4
+	maxDiffCharsBudget   = maxInputTokensApprox * approxCharsPerToken
+	httpTimeout          = 90 * time.Second
+	llmCallDeadline      = 4 * time.Minute
 )
 
 // closesRefRe matches `closes #NN` / `fixes #NN` / `resolves #NN`
@@ -142,22 +126,23 @@ func run(ctx context.Context) error {
 	prompt := buildPrompt(pr, files, checks, linked, checked)
 	systemPrompt := systemPromptText()
 
-	if cfg.AnthropicAPIKey == "" {
-		body := degradedComment("ANTHROPIC_API_KEY secret is not set; agentic review is in degraded mode. Configure the secret in repo settings to enable.")
-		return gh.upsertStickyComment(ctx, cfg.Owner, cfg.Repo, cfg.PRNumber, body)
-	}
-
-	resp, err := callAnthropic(ctx, cfg.AnthropicAPIKey, systemPrompt, prompt)
+	backend, kind, err := selectBackend(cfg)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "anthropic call failed:", err)
-		body := degradedComment(fmt.Sprintf("Anthropic API call failed (%s). Review will retry on the next push. See workflow logs.", redactErr(err)))
+		body := degradedComment(err.Error())
 		return gh.upsertStickyComment(ctx, cfg.Owner, cfg.Repo, cfg.PRNumber, body)
 	}
 
-	cost := estimateCost(resp.usageInputTokens, resp.usageOutputTokens)
-	body := assembleComment(resp.text, resp.usageInputTokens, resp.usageOutputTokens, cost)
+	resp, err := backend.Review(ctx, systemPrompt, prompt)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s call failed: %v\n", kind, err)
+		body := degradedComment(fmt.Sprintf("%s API call failed (%s). Review will retry on the next push. See workflow logs.", backendLabel(kind), redactErr(err)))
+		return gh.upsertStickyComment(ctx, cfg.Owner, cfg.Repo, cfg.PRNumber, body)
+	}
 
-	if err := writeStepSummary(cfg.StepSummaryPath, resp, cost); err != nil {
+	cost := estimateCost(kind, resp.usageInputTokens, resp.usageOutputTokens)
+	body := assembleComment(kind, resp.text, resp.usageInputTokens, resp.usageOutputTokens, cost)
+
+	if err := writeStepSummary(cfg.StepSummaryPath, kind, resp, cost); err != nil {
 		fmt.Fprintln(os.Stderr, "step summary (non-fatal):", err)
 	}
 
@@ -168,6 +153,7 @@ func run(ctx context.Context) error {
 type config struct {
 	GitHubToken     string
 	AnthropicAPIKey string
+	BackendOverride string // AGENTIC_REVIEW_BACKEND env: "github-models" / "anthropic" / ""
 	Owner           string
 	Repo            string
 	PRNumber        int
@@ -179,6 +165,7 @@ func loadConfig() (config, error) {
 	cfg := config{
 		GitHubToken:     os.Getenv("GITHUB_TOKEN"),
 		AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
+		BackendOverride: strings.TrimSpace(os.Getenv("AGENTIC_REVIEW_BACKEND")),
 		Workspace:       os.Getenv("GITHUB_WORKSPACE"),
 		StepSummaryPath: os.Getenv("GITHUB_STEP_SUMMARY"),
 	}
@@ -847,101 +834,113 @@ func shrinkDiff(files []prFile, budget int) (string, []string) {
 	return b.String(), dropped
 }
 
-// anthropicRequest mirrors the Messages API JSON wire shape. Only the
-// fields we set are populated; we deliberately use a flat struct rather
-// than chasing every optional knob.
-type anthropicRequest struct {
-	Model     string             `json:"model"`
-	MaxTokens int                `json:"max_tokens"`
-	System    string             `json:"system"`
-	Messages  []anthropicMessage `json:"messages"`
-}
-
-type anthropicMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type anthropicResponse struct {
-	Content []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"content"`
-	Usage struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
-}
-
+// llmResult is the backend-agnostic LLM response surface. Both the
+// Anthropic Messages API and the GitHub Models OpenAI-compatible
+// endpoint normalise their wire formats into this shape so the
+// orchestration logic stays unaware of which backend ran.
 type llmResult struct {
 	text              string
 	usageInputTokens  int
 	usageOutputTokens int
 }
 
-func callAnthropic(ctx context.Context, apiKey, system, user string) (llmResult, error) {
-	ctx, cancel := context.WithTimeout(ctx, anthropicCallDeadline)
-	defer cancel()
+// ReviewBackend is the abstraction over the LLM call. Implementations
+// own their wire format, model identifier, auth header, and timeout.
+// Returning an error puts the workflow into degraded mode (the
+// sticky comment still posts, the workflow exits 0).
+type ReviewBackend interface {
+	Review(ctx context.Context, systemPrompt, userPrompt string) (llmResult, error)
+}
 
-	body := anthropicRequest{
-		Model:     anthropicModel,
-		MaxTokens: maxOutputTokens,
-		System:    system,
-		Messages: []anthropicMessage{
-			{Role: "user", Content: user},
-		},
-	}
-	raw, err := json.Marshal(body)
-	if err != nil {
-		return llmResult{}, fmt.Errorf("marshal: %w", err)
-	}
+// backendKind tags which backend produced an llmResult so the
+// downstream comment / step-summary / cost helpers can label things
+// correctly.
+type backendKind string
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, anthropicEndpoint, bytes.NewReader(raw))
-	if err != nil {
-		return llmResult{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("anthropic-version", anthropicVersion)
-	req.Header.Set("x-api-key", apiKey)
+const (
+	backendAnthropic    backendKind = "anthropic"
+	backendGitHubModels backendKind = "github-models"
+)
 
-	hc := &http.Client{Timeout: anthropicCallDeadline}
-	resp, err := hc.Do(req)
-	if err != nil {
-		return llmResult{}, fmt.Errorf("http: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode >= 400 {
-		raw, _ := io.ReadAll(resp.Body)
-		return llmResult{}, fmt.Errorf("anthropic %s: %s", resp.Status, strings.TrimSpace(string(raw)))
-	}
-
-	var parsed anthropicResponse
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return llmResult{}, fmt.Errorf("decode: %w", err)
-	}
-
-	var text strings.Builder
-	for _, c := range parsed.Content {
-		if c.Type == "text" {
-			text.WriteString(c.Text)
+// selectBackend picks the LLM backend based on the configured override
+// and which credentials are present. The selection rule, in order:
+//
+//  1. If AGENTIC_REVIEW_BACKEND=github-models, use GitHub Models
+//     (requires GITHUB_TOKEN, which is always present in workflow runs).
+//  2. If AGENTIC_REVIEW_BACKEND=anthropic, use Anthropic
+//     (requires ANTHROPIC_API_KEY; degrades if missing).
+//  3. Otherwise, prefer GitHub Models when GITHUB_TOKEN is set and
+//     ANTHROPIC_API_KEY is unset; otherwise fall back to Anthropic.
+//  4. If neither credential is available for the selected backend,
+//     return a non-nil error carrying the operator-facing message.
+//
+// The boolean returned alongside the backend is the kind identifier
+// used by the comment / step-summary helpers.
+func selectBackend(cfg config) (ReviewBackend, backendKind, error) {
+	override := strings.ToLower(cfg.BackendOverride)
+	switch override {
+	case string(backendGitHubModels):
+		if cfg.GitHubToken == "" {
+			return nil, backendGitHubModels, errors.New("AGENTIC_REVIEW_BACKEND=github-models but GITHUB_TOKEN is empty; agentic review is in degraded mode")
 		}
+		return newGitHubModelsBackend(cfg.GitHubToken), backendGitHubModels, nil
+	case string(backendAnthropic):
+		if cfg.AnthropicAPIKey == "" {
+			return nil, backendAnthropic, errors.New("AGENTIC_REVIEW_BACKEND=anthropic but ANTHROPIC_API_KEY is empty; agentic review is in degraded mode. Configure the secret in repo settings to enable")
+		}
+		return newAnthropicBackend(cfg.AnthropicAPIKey), backendAnthropic, nil
+	case "":
+		// No explicit override: prefer GitHub Models when its token is
+		// available and Anthropic's is not. This is the default-friendly
+		// path for personal-account / individual-developer template
+		// instantiations.
+		if cfg.GitHubToken != "" && cfg.AnthropicAPIKey == "" {
+			return newGitHubModelsBackend(cfg.GitHubToken), backendGitHubModels, nil
+		}
+		if cfg.AnthropicAPIKey != "" {
+			return newAnthropicBackend(cfg.AnthropicAPIKey), backendAnthropic, nil
+		}
+		// Neither secret is set. Surface the original "key not set"
+		// message; operators reading old docs / runbooks expect it.
+		return nil, backendAnthropic, errors.New("neither GITHUB_TOKEN nor ANTHROPIC_API_KEY is available; agentic review is in degraded mode. Configure one in repo settings to enable")
+	default:
+		return nil, backendKind(override), fmt.Errorf("unknown AGENTIC_REVIEW_BACKEND=%q (expected \"github-models\" or \"anthropic\"); agentic review is in degraded mode", cfg.BackendOverride)
 	}
-	return llmResult{
-		text:              text.String(),
-		usageInputTokens:  parsed.Usage.InputTokens,
-		usageOutputTokens: parsed.Usage.OutputTokens,
-	}, nil
 }
 
-func estimateCost(in, out int) float64 {
-	return float64(in)*usdPerMTokIn/1_000_000 + float64(out)*usdPerMTokOut/1_000_000
+// backendLabel returns the human-friendly name shown in the degraded
+// comment when the backend's API call fails.
+func backendLabel(k backendKind) string {
+	switch k {
+	case backendGitHubModels:
+		return "GitHub Models"
+	case backendAnthropic:
+		return "Anthropic"
+	default:
+		return string(k)
+	}
 }
 
-func assembleComment(text string, in, out int, costUSD float64) string {
+func estimateCost(k backendKind, in, out int) float64 {
+	switch k {
+	case backendGitHubModels:
+		// GitHub Models is free-tier for personal-account use within
+		// the published rate limits; surface $0.0000 so the footer
+		// still has a deterministic numeric column the human reviewer
+		// can scan past.
+		return 0
+	case backendAnthropic:
+		return float64(in)*anthropicUSDPerMTokIn/1_000_000 + float64(out)*anthropicUSDPerMTokOut/1_000_000
+	default:
+		return 0
+	}
+}
+
+func assembleComment(k backendKind, text string, in, out int, costUSD float64) string {
 	header := "## Agentic PR review (read-only)\n\n"
 	footer := fmt.Sprintf(
-		"\n\n---\n_Read-only review by Claude (model `%s`). Tokens: in=%d / out=%d. Estimated cost: $%.4f. Disable for this PR by adding the `agentic-review:skip` label. See [`docs/agentic-review.md`](../blob/main/docs/agentic-review.md)._",
-		anthropicModel, in, out, costUSD,
+		"\n\n---\n_Read-only review by Claude via %s (model `%s`). Tokens: in=%d / out=%d. Estimated cost: $%.4f. Disable for this PR by adding the `agentic-review:skip` label. See [`docs/agentic-review.md`](../blob/main/docs/agentic-review.md)._",
+		backendLabel(k), backendModelID(k), in, out, costUSD,
 	)
 	return header + strings.TrimSpace(text) + footer
 }
@@ -953,7 +952,7 @@ func degradedComment(reason string) string {
 		"---\n_Read-only review. The workflow exited 0 to avoid blocking CI on agent-infrastructure issues. See [`docs/agentic-review.md`](../blob/main/docs/agentic-review.md)._"
 }
 
-func writeStepSummary(path string, r llmResult, costUSD float64) error {
+func writeStepSummary(path string, k backendKind, r llmResult, costUSD float64) error {
 	if path == "" {
 		return nil
 	}
@@ -964,13 +963,29 @@ func writeStepSummary(path string, r llmResult, costUSD float64) error {
 	defer func() { _ = f.Close() }()
 	body := fmt.Sprintf("## Agentic review cost\n\n"+
 		"| Metric | Value |\n| --- | --- |\n"+
+		"| Backend | %s |\n"+
 		"| Model | `%s` |\n"+
 		"| Input tokens | %d |\n"+
 		"| Output tokens | %d |\n"+
 		"| Estimated cost (USD) | $%.4f |\n",
-		anthropicModel, r.usageInputTokens, r.usageOutputTokens, costUSD)
+		backendLabel(k), backendModelID(k), r.usageInputTokens, r.usageOutputTokens, costUSD)
 	_, err = f.WriteString(body)
 	return err
+}
+
+// backendModelID returns the model identifier the named backend is
+// currently configured to use. Tests stub this through the same
+// constants the backends consume so the comment / summary stays in
+// sync with the wire payload.
+func backendModelID(k backendKind) string {
+	switch k {
+	case backendGitHubModels:
+		return githubModelsModel()
+	case backendAnthropic:
+		return anthropicModel
+	default:
+		return ""
+	}
 }
 
 // redactErr keeps secrets out of the degraded comment that gets pushed

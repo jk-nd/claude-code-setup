@@ -9,7 +9,7 @@
 | `gh` CLI authenticated to your GitHub account | The bootstrap script reads repo metadata, sets secrets, creates labels, and (optionally) configures branch protection via `gh api`. |
 | A GitHub repo created from this template | Click **Use this template** on `https://github.com/jk-nd/claude-code-setup`. |
 | `bash` 4+ (POSIX-compatible shells work) | `scripts/bootstrap.sh` is plain bash. |
-| (Optional) `ANTHROPIC_API_KEY` | Required only if you want agentic PR review to be live; the workflow degrades gracefully when the secret is missing. **There are three auth choices** (paid key / `anthropics/claude-code-action` / skip review entirely) — see [README §Authentication](../README.md#authentication) for the trade-offs before you pick. |
+| (Optional) `ANTHROPIC_API_KEY` | Required only if you pick the **Anthropic-direct** backend. The default backend (**GitHub Models**, free tier) authenticates via the workflow's `GITHUB_TOKEN` and needs no extra secret. The third option is to skip the review entirely. See [README §Authentication](../README.md#authentication) for the trade-offs. |
 
 ## Step 1 — instantiate the template
 
@@ -40,10 +40,45 @@ The script will:
    - `.github/dependabot.yml.template` → `.github/dependabot.yml`.
    - `.github/workflows/govulncheck.yml.template` → `.github/workflows/govulncheck.yml`.
    - `.github/workflows/nightly.yml.template` → `.github/workflows/nightly.yml`.
-6. Prompt for `ANTHROPIC_API_KEY` and set it via `gh secret set` (skip with empty input).
+6. Prompt **"Enable agentic review?"** — default **yes**. If yes, prompt for the backend:
+   - `github-models` (default, free tier) — sets `AGENTIC_REVIEW_ENABLED=true` and `AGENTIC_REVIEW_BACKEND=github-models` repo variables. **Recommended for personal repos.** No secret prompt.
+   - `anthropic` (paid, direct) — sets the same variables with `AGENTIC_REVIEW_BACKEND=anthropic`, then prompts for `ANTHROPIC_API_KEY` and stores it as a repo secret (skip with empty input — the workflow will degrade gracefully).
+   If you decline at the first prompt, the workflow ships disabled; turn it on later by setting the variables manually.
 7. Create labels: `compliance-review`, `agentic-review:skip`, `agentic-review:degraded`, `coverage-skip`.
 8. Optionally install the strict-recipe pre-push git hook (`scripts/install-pre-push-hook.sh`).
 9. Optionally create initial branch protection on `main`.
+
+### Sample bootstrap session
+
+```text
+$ ./scripts/bootstrap.sh
+claude-code-setup bootstrap
+===========================
+...
+Agentic review (read-only Claude PR review) is now ON by default —
+GitHub Models offers a free-tier path that uses the workflow's
+GITHUB_TOKEN, so there's no per-PR cost concern for personal repos.
+Enable agentic review? [Y/n]: y
+Setting variable AGENTIC_REVIEW_ENABLED=true on jk-nd/example-repo...
+  ok
+
+Auth backend:
+  - github-models: OpenAI-compatible endpoint hosted by GitHub.
+                   Free tier; uses the workflow's GITHUB_TOKEN.
+                   Recommended for personal repos.
+  - anthropic:     Anthropic Messages API direct.
+                   Paid; requires ANTHROPIC_API_KEY.
+Which backend? [github-models/anthropic] [github-models]:
+Setting variable AGENTIC_REVIEW_BACKEND=github-models...
+  ok
+
+GitHub Models requires no extra secret — the workflow's
+GITHUB_TOKEN is sufficient. The workflow already declares
+permissions: { models: read } so the token carries the
+right scope on every PR run.
+```
+
+For the Anthropic-direct path, the second prompt is `anthropic`, and the script then prompts for `ANTHROPIC_API_KEY` (input hidden) before continuing.
 
 The script is idempotent — re-running it after editing `${WATCHED_PATHS}` regenerates the substituted files. Templates already renamed are skipped on subsequent runs.
 
@@ -188,7 +223,9 @@ To verify `actionlint` triggers, push a commit that edits any file under `.githu
 | Symptom | Diagnosis | Fix |
 | --- | --- | --- |
 | `agentic-review` workflow skipped on every PR | PR is in draft state, or has the `agentic-review:skip` label, or `AGENTIC_REVIEW_ENABLED` repo variable is unset / not `'true'` | Mark PR ready-for-review, remove the label, or set the variable. |
-| `agentic-review` posts "Status: degraded — ANTHROPIC_API_KEY secret is not set" | Secret missing | Re-run `scripts/bootstrap.sh` and supply the key, or set it manually via `gh secret set ANTHROPIC_API_KEY`. |
+| `agentic-review` posts "Status: degraded — ANTHROPIC_API_KEY is empty" | The `anthropic` backend is selected but the secret is missing | Either set the secret (`gh secret set ANTHROPIC_API_KEY`) or switch to GitHub Models (`gh variable set AGENTIC_REVIEW_BACKEND --body github-models`). |
+| `agentic-review` posts "Status: degraded — github models auth required (HTTP 401/403)" | The workflow is missing `permissions: { models: read }`, or `GITHUB_TOKEN` was not passed to the binary | Confirm the shipped `agentic-review.yml` was not edited; re-instantiate the file from the template if needed. |
+| `agentic-review` posts "Status: degraded — github models rate-limited (HTTP 429)" | GitHub Models free-tier rate-limit window is exhausted | Wait for the window to reset and push again, or switch to the Anthropic-direct backend via `gh variable set AGENTIC_REVIEW_BACKEND --body anthropic`. |
 | `trust-boundary-gate` says "no compliance-sensitive paths touched" but you expected it to fire | Watched paths in the workflow do not match the touched files | Check the `paths:` block under `on.pull_request` in `.github/workflows/trust-boundary.yml` and the `watched` array inside the script step; they must match. |
 | `CI / actionlint` fails with a context-scope error on a `matrix.<key>` reference in a job-level `if:` | The matrix context is not in scope for `jobs.<id>.if` | Move the `matrix.<key>` reference into the job's `steps[*].if`. The matrix context is available there. |
 | `coverage-gate` fails on a PR you expect to be unrelated | Coverage measurement noise on an unrelated package, or a baselined package was renamed | Apply the `coverage-skip` label for noise; file a baseline-update PR for renames. See **Coverage gate** above. |

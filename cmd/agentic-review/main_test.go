@@ -86,24 +86,28 @@ func TestParseSensitivePaths(t *testing.T) {
 }
 
 func TestEstimateCost(t *testing.T) {
-	// 1M input tokens at $15 = $15.00
-	if got := estimateCost(1_000_000, 0); got != 15.0 {
-		t.Errorf("estimateCost(1M, 0) = %.4f, want 15.0", got)
+	// 1M input tokens at $15 = $15.00 (Anthropic pricing)
+	if got := estimateCost(backendAnthropic, 1_000_000, 0); got != 15.0 {
+		t.Errorf("estimateCost(anthropic, 1M, 0) = %.4f, want 15.0", got)
 	}
-	// 1M output tokens at $75 = $75.00
-	if got := estimateCost(0, 1_000_000); got != 75.0 {
-		t.Errorf("estimateCost(0, 1M) = %.4f, want 75.0", got)
+	// 1M output tokens at $75 = $75.00 (Anthropic pricing)
+	if got := estimateCost(backendAnthropic, 0, 1_000_000); got != 75.0 {
+		t.Errorf("estimateCost(anthropic, 0, 1M) = %.4f, want 75.0", got)
 	}
 	// Typical PR: 30K in, 1K out
-	got := estimateCost(30_000, 1_000)
+	got := estimateCost(backendAnthropic, 30_000, 1_000)
 	wantApprox := 30_000.0*15.0/1_000_000 + 1_000.0*75.0/1_000_000
 	if got != wantApprox {
-		t.Errorf("estimateCost(30K, 1K) = %.4f, want %.4f", got, wantApprox)
+		t.Errorf("estimateCost(anthropic, 30K, 1K) = %.4f, want %.4f", got, wantApprox)
+	}
+	// GitHub Models is free at the published tier; we surface $0.
+	if got := estimateCost(backendGitHubModels, 30_000, 1_000); got != 0 {
+		t.Errorf("estimateCost(github-models) should be 0, got %.4f", got)
 	}
 }
 
 func TestAssembleCommentIncludesFooter(t *testing.T) {
-	body := assembleComment("verdict text", 1234, 567, 0.0234)
+	body := assembleComment(backendAnthropic, "verdict text", 1234, 567, 0.0234)
 	if !strings.Contains(body, "Read-only review") {
 		t.Errorf("missing header: %s", body)
 	}
@@ -115,6 +119,19 @@ func TestAssembleCommentIncludesFooter(t *testing.T) {
 	}
 	if !strings.Contains(body, "agentic-review:skip") {
 		t.Errorf("missing opt-out hint: %s", body)
+	}
+	if !strings.Contains(body, "Anthropic") {
+		t.Errorf("missing backend label: %s", body)
+	}
+}
+
+func TestAssembleCommentLabelsGitHubModelsBackend(t *testing.T) {
+	body := assembleComment(backendGitHubModels, "verdict", 100, 50, 0)
+	if !strings.Contains(body, "GitHub Models") {
+		t.Errorf("missing GitHub Models label: %s", body)
+	}
+	if !strings.Contains(body, "$0.0000") {
+		t.Errorf("missing zero-cost footer: %s", body)
 	}
 }
 
