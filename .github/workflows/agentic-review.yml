@@ -84,6 +84,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           AGENTIC_REVIEW_BACKEND: ${{ vars.AGENTIC_REVIEW_BACKEND }}
+          # Override the default GitHub Models model identifier (default: openai/gpt-4.1).
+          # See https://models.github.ai/catalog/models for the current catalog.
+          AGENTIC_REVIEW_GITHUB_MODELS_MODEL: ${{ vars.AGENTIC_REVIEW_GITHUB_MODELS_MODEL }}
+          AGENTIC_REVIEW_GITHUB_MODELS_ENDPOINT: ${{ vars.AGENTIC_REVIEW_GITHUB_MODELS_ENDPOINT }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_WORKSPACE: ${{ github.workspace }}
