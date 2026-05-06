@@ -34,9 +34,9 @@ prompt_default() {
     local default="${2:-}"
     local reply
     if [ -n "$default" ]; then
-        printf "%s [%s]: " "$prompt" "$default"
+        printf "%s [%s]: " "$prompt" "$default" >&2
     else
-        printf "%s: " "$prompt"
+        printf "%s: " "$prompt" >&2
     fi
     read -r reply
     echo "${reply:-$default}"
@@ -48,9 +48,9 @@ prompt_yn() {
     local reply
     while true; do
         if [ "$default" = "y" ]; then
-            printf "%s [Y/n]: " "$prompt"
+            printf "%s [Y/n]: " "$prompt" >&2
         else
-            printf "%s [y/N]: " "$prompt"
+            printf "%s [y/N]: " "$prompt" >&2
         fi
         read -r reply
         reply="${reply:-$default}"
