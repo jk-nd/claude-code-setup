@@ -25,14 +25,17 @@ import (
 // Wire format is OpenAI-compatible: a {model, messages, max_tokens,
 // temperature} request and a {choices: [{message: {content}}]} response.
 //
-// Default model is anthropic/claude-sonnet-4.5 — the most-recent Claude
-// snapshot generally available in the GitHub Models catalogue at the
-// time this template was instantiated. Override at runtime via the
-// AGENTIC_REVIEW_GITHUB_MODELS_MODEL env var without rebuilding the
-// binary, e.g. when GitHub bumps the canonical Sonnet identifier.
+// Default model is openai/gpt-4.1 — the highest-quality model
+// generally available in the GitHub Models catalogue. Anthropic
+// Claude is not currently in the GitHub Models catalogue (as of
+// 2026-05-06); for Claude reviews the AGENTIC_REVIEW_BACKEND must
+// be set to anthropic with an ANTHROPIC_API_KEY. Override the default
+// at runtime via the AGENTIC_REVIEW_GITHUB_MODELS_MODEL env var
+// without rebuilding the binary. Verify available models at
+// https://models.github.ai/catalog/models.
 const (
 	githubModelsEndpoint     = "https://models.github.ai/inference/chat/completions"
-	githubModelsDefaultModel = "anthropic/claude-sonnet-4.5"
+	githubModelsDefaultModel = "openai/gpt-4.1"
 	githubModelsModelEnv     = "AGENTIC_REVIEW_GITHUB_MODELS_MODEL"
 	githubModelsEndpointEnv  = "AGENTIC_REVIEW_GITHUB_MODELS_ENDPOINT"
 )

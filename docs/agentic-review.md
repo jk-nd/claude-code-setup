@@ -57,7 +57,7 @@ flowchart LR
 | Endpoint | `https://models.github.ai/inference/chat/completions` | `https://api.anthropic.com/v1/messages` |
 | Auth header | `Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}` | `x-api-key: $ANTHROPIC_API_KEY` |
 | Workflow permission | `permissions: { models: read }` (declared in shipped workflow) | none (the API key carries auth) |
-| Default model | `anthropic/claude-sonnet-4.5` | `claude-opus-4-7-1m` |
+| Default model | `openai/gpt-4.1` | `claude-opus-4-7-1m` |
 | Override model | `AGENTIC_REVIEW_GITHUB_MODELS_MODEL` env var | constant in `backend_anthropic.go` (bump and rebuild) |
 | Wire format | OpenAI-compatible (`{model, messages, max_tokens}` request, `{choices: [{message: {content}}]}` response) | Anthropic Messages (`{system, messages}` request, `{content: [{text}]}` response) |
 | Cost | Free at the published rate-limit tier | ~$15/MTok input, ~$75/MTok output (Opus snapshot) |
@@ -84,7 +84,7 @@ gh variable set AGENTIC_REVIEW_BACKEND --repo $OWNER/$REPO --body anthropic
 gh secret   set ANTHROPIC_API_KEY      --repo $OWNER/$REPO
 
 # Override the GitHub Models model identifier (no rebuild required).
-gh variable set AGENTIC_REVIEW_GITHUB_MODELS_MODEL --repo $OWNER/$REPO --body anthropic/claude-sonnet-4.5
+gh variable set AGENTIC_REVIEW_GITHUB_MODELS_MODEL --repo $OWNER/$REPO --body openai/gpt-4.1
 ```
 
 The variable is consumed by the workflow's `Run review` step; the next PR push picks it up automatically. No code change.
@@ -153,7 +153,7 @@ The list should mirror the watched paths in `.github/workflows/trust-boundary.ym
 - Is the absence of a unit test for `Emitter.WriteRecord` covered by the existing integration test in `test/e2e/audit_test.go`?
 
 ---
-_Read-only review by Claude via GitHub Models (model `anthropic/claude-sonnet-4.5`). Tokens: in=12500 / out=420. Estimated cost: $0.0000. Disable for this PR by adding the `agentic-review:skip` label. See [`docs/agentic-review.md`](../blob/main/docs/agentic-review.md)._
+_Read-only review by Claude via GitHub Models (model `openai/gpt-4.1`). Tokens: in=12500 / out=420. Estimated cost: $0.0000. Disable for this PR by adding the `agentic-review:skip` label. See [`docs/agentic-review.md`](../blob/main/docs/agentic-review.md)._
 ```
 
 Severity vocabulary:
