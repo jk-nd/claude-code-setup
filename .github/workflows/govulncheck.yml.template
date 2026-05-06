@@ -1,0 +1,79 @@
+name: govulncheck
+
+# govulncheck — Go vulnerability scan against the module graph.
+#
+# Scans the project's Go modules against the Go vulnerability database
+# (golang.org/x/vuln). Surfaces CVEs in transitive dependencies that
+# Dependabot would not catch until the upstream fix lands.
+#
+# Trigger model:
+#   - schedule: 05:00 UTC every Monday — weekly cadence is enough for
+#     a low-churn project; daily would just be noise on the same DB.
+#   - workflow_dispatch: operators can re-run on demand.
+#   - pull_request (paths-restricted): triggers when go.mod / go.sum
+#     change so a PR introducing a vulnerable dep gets caught at review
+#     time, not a week later.
+#
+# On a vulnerability finding the run fails. For PR triggers the failed
+# step in the run is the surface; for cron triggers we additionally open
+# a tracking issue (PRs already have a discussion thread, issues do not).
+#
+# The `govulncheck` and `security` labels must exist on the repository
+# before the first auto-issue can succeed; create them once with:
+#   gh label create govulncheck --description "Vulnerability surfaced by govulncheck" --color B60205
+#   gh label create security    --description "Security-relevant issue"               --color D93F0B
+#
+# Customise this workflow at template-instantiation time:
+#   - Change `go-version` if your project pins a different toolchain.
+#   - Add additional `working-directory` blocks for submodules with
+#     their own go.mod (examples/, internal tooling, etc.).
+
+on:
+  schedule:
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: govulncheck-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck (root module)
+        id: scan_root
+        run: govulncheck ./... 2>&1 | tee /tmp/vuln-root.txt
+      # Auto-issue creation on cron only (not on PRs — PRs surface via the failed step)
+      - name: Open issue on cron failure
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reports = ['/tmp/vuln-root.txt']
+              .map(p => { try { return `### ${p}\n\n\`\`\`\n${fs.readFileSync(p, 'utf8').slice(0, 8000)}\n\`\`\`\n`; } catch { return ''; } })
+              .join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[govulncheck] Vulnerability surfaced in nightly scan`,
+              body: `Nightly govulncheck found a vulnerability.\n\nWorkflow: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n\n${reports}`,
+              labels: ['security', 'govulncheck'],
+            });

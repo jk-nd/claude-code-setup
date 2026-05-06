@@ -79,14 +79,21 @@ See [`docs/setup.md`](docs/setup.md) for a step-by-step walkthrough and troubles
 | `AGENTS.md` | Operating principles for orchestrator + subagents. Read this first. |
 | `.github/workflows/agentic-review.yml` | Read-only Claude PR review. Sticky-comment pattern. |
 | `.github/workflows/trust-boundary.yml` | Compliance gate keyed off watched paths + label / approval. |
-| `.github/workflows/ci.yml.template` | Go-flavoured example CI; replace with your stack's toolchain. |
+| `.github/workflows/ci.yml.template` | Go-flavoured example CI with paths-filter pattern + actionlint gate; replace with your stack's toolchain. |
+| `.github/workflows/govulncheck.yml.template` | (Opt-in) Weekly Go vulnerability scan + per-PR scan on `go.mod` changes. |
+| `.github/workflows/nightly.yml.template` | (Opt-in) Slow-tests + extended fuzz harness on a daily cron. |
+| `.github/dependabot.yml.template` | (Opt-in) Weekly dependency bumps for Go modules + GitHub Actions. |
 | `.github/CODEOWNERS.template` | Skeleton with `${WATCHED_PATHS}` and `${OWNER}` placeholders. |
 | `.github/ISSUE_TEMPLATE/` | Five archetypes: epic, sub-issue, hardening, testing, ci. |
 | `.github/PULL_REQUEST_TEMPLATE.md` | Summary / Test plan / Boundaries / Closes. |
 | `cmd/agentic-review/` | Stdlib-only Go binary that drives the read-only review. |
+| `cmd/coverage-gate/` | (Opt-in) Stdlib-only Go binary that enforces a per-package coverage baseline. |
+| `ops/coverage-baseline.json.example` | Starter baseline for the coverage gate; copy to `ops/coverage-baseline.json` to enable. |
+| `templates/claude-settings.json.template` | (Opt-in) Curated permissions allowlist for Claude Code subagents working in the repo. Bootstrap copies it to `.claude/settings.json`. |
 | `docs/agentic-review.md` | Operator-facing docs: cost, opt-out, safety boundaries. |
-| `docs/setup.md` | Bootstrap walkthrough. |
-| `scripts/bootstrap.sh` | Idempotent setup script: placeholders, secrets, labels, branch protection. |
+| `docs/setup.md` | Bootstrap walkthrough, coverage-gate procedure, pre-push hook docs. |
+| `scripts/bootstrap.sh` | Idempotent setup script: placeholders, secrets, labels, opt-in template renames, branch protection. |
+| `scripts/install-pre-push-hook.sh` | Standalone installer for the strict-recipe pre-push hook (refuses dirty-tree push, runs build/vet/short-test/`go mod tidy` diff). |
 
 ## What's not
 

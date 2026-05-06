@@ -1,0 +1,48 @@
+version: 2
+
+# Dependabot — weekly dependency bumps for Go modules + GitHub Actions
+# pinned in workflow files. Off by default; the bootstrap script renames
+# this file from .template only when the operator opts in.
+#
+# Trade-offs:
+#   - PRs are batched weekly; the queue can spike on Monday morning if
+#     the upstream releases for any of the listed ecosystems coincide.
+#   - The root module is the noisiest (largest dep graph). open-pull-
+#     requests-limit: 5 caps how many root-module PRs Dependabot keeps
+#     simultaneously open so the queue stays reviewable.
+#   - Major-version bumps still come through Dependabot but should be
+#     reviewed manually; the auto-merge automation (filed as a follow-up
+#     issue from the autonomy-gap epic) only targets patch + minor.
+#
+# After enabling: ensure your CI workflows run on `pull_request` (the
+# default ci.yml.template already does) so the Dependabot PRs get the
+# same gate every other PR does. If branch protection is enabled, the
+# Dependabot account needs the "Allow specified actors to bypass
+# required pull requests" exemption OR a separate approver.
+
+updates:
+  # Root Go module. Adjust `directory` if your project uses a different
+  # layout (e.g. /backend, /service).
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # GitHub Actions used in .github/workflows/*.yml. Pins major and
+  # sub-major versions of actions like checkout, setup-go, github-script
+  # so a published-but-broken action version cannot break CI silently.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  # Optional additional Go modules. Uncomment + adjust `directory` if
+  # your project ships submodules (e.g. examples/ each with their own
+  # go.mod). Each entry costs one weekly Dependabot run; the queue is
+  # cumulative.
+  #
+  # - package-ecosystem: gomod
+  #   directory: /examples/demo
+  #   schedule:
+  #     interval: weekly
