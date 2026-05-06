@@ -44,12 +44,23 @@ A subagent is a process (Claude or otherwise) given exactly one issue and exactl
 - **Verify before push — full recipe.** Run **every gate CI runs**, locally, before opening a PR. The default `go test ./...` is insufficient — CI runs stricter. The minimum recipe for a Go project (adapt for other stacks):
 
   ```sh
+  # 1. Stage and commit FIRST. Verifying on a dirty tree is the failure
+  #    mode that ate hours during the 2026-04-26/27 operating-day:
+  #    agent verified clean on uncommitted changes, then pushed an
+  #    OLDER commit. The pre-push hook (scripts/install-pre-push-hook.sh)
+  #    enforces this; install it once with:
+  #        ./scripts/install-pre-push-hook.sh
+  git add <changed files> && git status                 # confirm staging
+  git commit -m "..."                                   # commit then verify
+
+  # 2. Verify against the committed state.
   go build ./...
   go vet ./...
   go test ./... -short -timeout=300s -count=1            # baseline
   go test -race -count=1 -timeout=600s ./...             # CI runs -race; skipping = race-condition surprises in CI
   go mod tidy && git diff --exit-code go.mod go.sum      # CI fails if tidy produces a diff
   golangci-lint run --timeout=5m ./...                   # install locally; do not rely on CI
+
   # Plus any project-specific gates the CI runs:
   #   - go test -tags e2e ./test/e2e/...                 (if the project ships an e2e tag)
   #   - go test -coverprofile=cov.out ./... && go run ./cmd/coverage-gate ...   (if a coverage gate exists)
@@ -57,6 +68,8 @@ A subagent is a process (Claude or otherwise) given exactly one issue and exactl
   ```
 
   **Why this is non-negotiable:** CI runs `-race`, runs `go mod tidy && git diff --exit-code`, and may run a coverage gate that fails on regression. A passing local `go test ./...` is not equivalent. Agents that skip these have shipped PRs that were red on CI for hours before a human triaged. **Belt-and-braces: the strict recipe, not the loose one.**
+
+  **Commit-first ordering matters.** After `git add`, run `git status` to confirm everything is staged, then `git commit`, **then** run the verify recipe. The pre-push hook (installed via `./scripts/install-pre-push-hook.sh`) enforces this by refusing pushes when the working tree is dirty. Direct response to the failure mode where verification ran on uncommitted changes and the agent pushed the wrong commit.
 - **Open a draft PR** when ready. Mark ready-for-review only when the orchestrator instructs.
 - **Never merge.** Subagents do not merge — period, regardless of how trivial the change. See the [Roles](#roles) section above for the three-role model and the author-merger rule.
 - **Never force-push** unless the orchestrator explicitly asks.
@@ -88,6 +101,45 @@ These four are the hardest-won lessons; honour them.
 The trust-boundary CI gate (`.github/workflows/trust-boundary.yml`) routes PRs that touch compliance-sensitive paths through the `compliance-review` team via CODEOWNERS, requiring either the `compliance-review` label or an approving review on the current HEAD. The watched paths are configured at template-instantiation time; the gate fails closed when a watched path is touched without the required signal.
 
 For projects that are framed as deployable-with-agents-AND-compliant (ISO / SOC / GDPR / EU-AI-Act / NIST / DORA), the trust-boundary gate is non-negotiable. It is the audit trail an external assessor reaches for first.
+
+## Coverage gate (when enabled)
+
+If the project's `.github/workflows/ci.yml` has the `coverage-gate:` job uncommented, the gate enforces a per-package baseline (`ops/coverage-baseline.json`).
+
+| Outcome | Threshold | Action |
+| --- | --- | --- |
+| **PASS** | measured ≥ baseline (with 0.05pp slack) | Nothing to do. |
+| **FAIL** | a baselined package regressed | The PR check goes red. **Two paths to clear:** |
+| **WARN** | unbaselined package below 50% | Annotation only. Optional cleanup. |
+
+**Two paths to clear a FAIL.** Pick by the SHAPE of the regression, not convenience:
+
+| Situation | Path |
+| --- | --- |
+| Permanent drop (deleted module, restructured packages) | File a **separate baseline-update PR** that lowers the threshold to the new measured-current floor. Land it BEFORE the dependent change. |
+| Temporary dip (in-flight refactor with planned follow-up tests, doc-only PR with measurement noise on an unrelated package) | Apply the **`coverage-skip` label** to the PR. The gate logs everything, writes the step summary, and exits 0. The label is auditable in the PR timeline. |
+| Test-only PR whose purpose is to expose existing gaps | `coverage-skip` label. The PR's intent IS to ship below baseline temporarily; the label makes the intent explicit. |
+
+**Mixing paths is a process violation.** Applying the label AND quietly editing the baseline in the same PR defeats the audit-trail purpose of both.
+
+Run the gate locally before push:
+
+```sh
+go test -coverprofile=cov.out -short -timeout=300s ./...
+go run ./cmd/coverage-gate --baseline=ops/coverage-baseline.json --profile=cov.out
+```
+
+## Dependabot (when enabled)
+
+If `.github/dependabot.yml` is present, Dependabot opens weekly bump PRs for Go modules and GitHub Actions.
+
+| Update type | Default expectation |
+| --- | --- |
+| `version-update:semver-patch` | Auto-merge candidate (the auto-merge automation is a separate follow-up issue; until shipped, treat these as fast-track human review). |
+| `version-update:semver-minor` | Auto-merge candidate, same caveat. |
+| `version-update:semver-major` | **Manual review required.** Major bumps can carry breaking changes; the human reviewer must read the upstream changelog. |
+
+A Dependabot PR that's stale because main moved underneath it can be rebased by commenting `@dependabot rebase`. (An auto-rebase cron is filed as a follow-up issue.)
 
 ## Cost discipline
 

@@ -9,8 +9,25 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    # Skip the workflow entirely for doc-only / metadata-only PRs.
+    # The build/test gates here add no signal for these changes; on a
+    # busy day the savings on free-tier Actions minutes are real.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+      - 'LICENSE'
+      - 'CHANGELOG.md'
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+      - 'LICENSE'
+      - 'CHANGELOG.md'
 
 permissions:
   contents: read
@@ -24,6 +41,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Per-job paths filter (OPTIONAL — see comment block below).
+  #
+  # Lifted from the go-mcp-gw reference repo. The default jobs in this
+  # template (build-and-test, lint, actionlint) do not need filtering —
+  # they are cheap enough to run unconditionally. The `paths` job is
+  # provided so project-specific jobs added later (e2e, examples,
+  # fuzz, oscal-check, translator-roundtrip, etc.) can opt in by
+  # consuming `needs.paths.outputs.<filter-name>` in a job-level `if:`.
+  #
+  # Cost model: this job runs `dorny/paths-filter@v3` once per PR push.
+  # Single ubuntu-latest, only checkout + the filter action — no Go,
+  # no build. The cost added here is paid back many-fold once even one
+  # downstream job is gated on it.
+  #
+  # `workflows` is a project-agnostic filter that downstream jobs can
+  # use; the only sample downstream consumer in this template is the
+  # `actionlint` job, which gates on `.github/workflows/**` changes.
+  # Add additional filters here as your project grows (per-area Go
+  # paths, e2e paths, examples, etc.).
+  paths:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.f.outputs.go }}
+      workflows: ${{ steps.f.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            go:
+              - '**.go'
+              - 'go.mod'
+              - 'go.sum'
+            workflows:
+              - '.github/workflows/**'
+
   build-and-test:
     runs-on: ubuntu-latest
     steps:
@@ -64,3 +118,93 @@ jobs:
         with:
           version: v2.11.4
           args: --timeout=5m
+
+  # actionlint — workflow YAML linter.
+  #
+  # Catches the `matrix.filter` class of bug pre-merge instead of via a
+  # phantom 0-job CI run. This is the gap that broke go-mcp-gw CI for
+  # ~6 hours when a workflow PR used `matrix.<key>` in a job-level `if:`
+  # — actionlint flags this immediately because the matrix context is
+  # not in scope for `jobs.<id>.if`, only `github`, `inputs`, `needs`,
+  # and `vars`.
+  #
+  # Gated on the `workflows` filter so this job runs only when
+  # `.github/workflows/**` actually changed.
+  actionlint:
+    runs-on: ubuntu-latest
+    needs: paths
+    if: needs.paths.outputs.workflows == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install actionlint
+        run: |
+          # Pin a known-good release via the official installer script.
+          # The script lands the binary as ./actionlint in the cwd.
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.7
+      - name: Run actionlint
+        run: ./actionlint -color
+
+  # ---------------------------------------------------------------------
+  # OPTIONAL example: paths-gated job (commented out)
+  # ---------------------------------------------------------------------
+  #
+  # The pattern below shows how to add a project-specific job that runs
+  # only when its inputs change. Uncomment + adapt for your project's
+  # e2e, fuzz, examples, or translator-roundtrip suites.
+  #
+  # First, add a filter to the `paths` job above (e.g. `e2e:` with the
+  # path globs your e2e tests transitively depend on). Then declare the
+  # downstream job with `needs: [build-and-test, paths]` and gate it on
+  # the filter output in a job-level `if:`.
+  #
+  # e2e:
+  #   runs-on: ubuntu-latest
+  #   needs: [build-and-test, paths]
+  #   if: needs.paths.outputs.e2e == 'true'
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Set up Go
+  #       uses: actions/setup-go@v5
+  #       with:
+  #         go-version: '1.26'
+  #         cache: true
+  #     - name: E2E tests
+  #       run: go test -tags e2e -race -count=1 -timeout=5m ./test/e2e/...
+  #
+  # ---------------------------------------------------------------------
+  # OPTIONAL example: coverage gate (commented out)
+  # ---------------------------------------------------------------------
+  #
+  # Opt-in: ship `cmd/coverage-gate/` (template at
+  # templates/coverage-gate/) and a baseline JSON, then uncomment the
+  # block below. See docs/setup.md §Coverage gate for the operator
+  # procedure (creating the `coverage-skip` label, populating the
+  # baseline, etc.).
+  #
+  # coverage-gate:
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name == 'pull_request'
+  #   needs: build-and-test
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Set up Go
+  #       uses: actions/setup-go@v5
+  #       with:
+  #         go-version: '1.26'
+  #         cache: true
+  #     - name: Generate coverage profile
+  #       run: go test -coverprofile=cov.out -short -timeout=300s ./...
+  #     - name: Build coverage-gate binary
+  #       run: go build -o /tmp/coverage-gate ./cmd/coverage-gate
+  #     - name: Enforce coverage baseline
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #         GITHUB_REPOSITORY: ${{ github.repository }}
+  #         PR_NUMBER: ${{ github.event.pull_request.number }}
+  #       run: /tmp/coverage-gate --baseline=ops/coverage-baseline.json --profile=cov.out
+  #     - name: Upload coverage profile
+  #       if: always()
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: coverage-profile
+  #         path: cov.out

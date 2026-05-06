@@ -7,13 +7,17 @@
 #   2. Prompt for the comma-separated list of compliance-sensitive
 #      paths (e.g. internal/policy/,internal/audit/).
 #   3. Substitute ${OWNER}, ${REPO}, ${WATCHED_PATHS},
-#      ${WATCHED_PATHS_AS_CODEOWNER_LINES} placeholders across
-#      *.template files and inline placeholders.
-#   4. Rename *.template -> their non-template name.
-#   5. Prompt for ANTHROPIC_API_KEY and set via `gh secret set`
+#      ${WATCHED_PATHS_AS_CODEOWNER_LINES} placeholders across the
+#      always-rename *.template files (ci.yml, CODEOWNERS).
+#   4. Rename always-renamed *.template -> their non-template name.
+#   5. Prompt-rename the opt-in *.template files: dependabot config,
+#      govulncheck workflow, nightly workflow, .claude/settings.json.
+#   6. Prompt for ANTHROPIC_API_KEY and set via `gh secret set`
 #      (empty input skips this step).
-#   6. Create the `compliance-review` label via `gh api`.
-#   7. Optionally create initial branch protection on `main`.
+#   7. Create labels: compliance-review, agentic-review:skip,
+#      agentic-review:degraded, coverage-skip.
+#   8. Optionally install the strict-recipe pre-push git hook.
+#   9. Optionally configure branch protection on `main`.
 #
 # The script is safe to re-run. On re-run, *.template files have
 # already been renamed away; the script handles this gracefully and
@@ -70,9 +74,8 @@ require_gh() {
 }
 
 # Substitute placeholders in a file. Placeholders use the ${NAME}
-# shell-syntax form. We use sed with a per-replacement argument list
-# so values containing newlines (CODEOWNERS lines) are handled by
-# breaking the newline into the sed replacement explicitly.
+# shell-syntax form. We use python for the substitution to avoid sed
+# portability traps around multi-line replacements.
 substitute_placeholders() {
     local file="$1"
     local owner="$2"
@@ -83,8 +86,6 @@ substitute_placeholders() {
     local tmp
     tmp=$(mktemp)
 
-    # Use python for the substitution to avoid sed portability traps
-    # around multi-line replacements and special characters.
     OWNER="$owner" REPO="$repo" WATCHED_PATHS="$watched_paths" \
         WATCHED_PATHS_AS_CODEOWNER_LINES="$codeowner_lines" \
         python3 - "$file" "$tmp" <<'PYEOF'
@@ -142,6 +143,45 @@ build_codeowner_lines() {
     printf "%s" "${out%$'\n'}"
 }
 
+# Conditional rename helper: copy a *.template file to its target name
+# (after substitution) and remove the source. No-op if source is missing
+# (idempotent re-run path).
+rename_template() {
+    local src="$1"
+    local dst="$2"
+
+    if [ ! -f "$src" ]; then
+        return 0
+    fi
+
+    # Ensure parent directory of destination exists.
+    local dst_dir
+    dst_dir="$(dirname "$dst")"
+    mkdir -p "$dst_dir"
+
+    cp "$src" "$dst"
+    substitute_placeholders "$dst" "$OWNER" "$REPO" "$WATCHED_PATHS" "$CODEOWNER_LINES"
+    rm -f "$src"
+    echo "  -> ${dst#${REPO_ROOT}/}"
+}
+
+# Create a label idempotently; treat 422 (already exists) as success.
+create_label() {
+    local name="$1"
+    local color="$2"
+    local description="$3"
+
+    echo "Creating '$name' label..."
+    if gh api -X POST "/repos/$OWNER/$REPO/labels" \
+        -f name="$name" \
+        -f color="$color" \
+        -f description="$description" >/dev/null 2>&1; then
+        echo "  ok"
+    else
+        echo "  already exists (or could not be created — check repo permissions)"
+    fi
+}
+
 # ---------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------
@@ -194,40 +234,78 @@ echo "$CODEOWNER_LINES" | sed 's/^/    /'
 echo
 
 # -----------------------------------------------------------------
-# Step: substitute placeholders + rename *.template files
+# Step: substitute placeholders + rename always-renamed *.template
+# -----------------------------------------------------------------
+#
+# These templates ALWAYS get renamed on bootstrap (the operator wants
+# them on; they're the foundation of the setup). The opt-in templates
+# (dependabot, govulncheck, nightly, .claude settings) get a separate
+# prompted step below.
+
+echo "Substituting placeholders + renaming always-renamed *.template files..."
+
+ALWAYS_RENAME_TEMPLATES=(
+    ".github/workflows/ci.yml.template"
+    ".github/CODEOWNERS.template"
+)
+
+for src in "${ALWAYS_RENAME_TEMPLATES[@]}"; do
+    if [ ! -f "$src" ]; then
+        continue
+    fi
+    dst="${src%.template}"
+    rename_template "$src" "$dst"
+done
+
+# -----------------------------------------------------------------
+# Step: opt-in *.template renames
 # -----------------------------------------------------------------
 
-echo "Substituting placeholders + renaming *.template files..."
+echo
+echo "Optional template features:"
+echo
 
-# Process every *.template file currently in the tree.
-while IFS= read -r -d '' f; do
-    target="${f%.template}"
-    cp "$f" "$target"
-    substitute_placeholders "$target" "$OWNER" "$REPO" "$WATCHED_PATHS" "$CODEOWNER_LINES"
-    rm -f "$f"
-    echo "  -> ${target#${REPO_ROOT}/}"
-done < <(find . -type f -name "*.template" -print0)
-
-# Also substitute placeholders inline in non-template files that
-# reference ${OWNER}, ${REPO}, etc. (currently none ship with such
-# placeholders, but keep the call in for forward-compat).
-INLINE_TARGETS=()
-# Add explicit inline targets here as the template grows. None today.
-for t in "${INLINE_TARGETS[@]}"; do
-    if [ -f "$t" ]; then
-        substitute_placeholders "$t" "$OWNER" "$REPO" "$WATCHED_PATHS" "$CODEOWNER_LINES"
-        echo "  inline: $t"
+# .claude/settings.json — curated permissions allowlist for Claude Code
+# subagents working in this repo.
+if [ -f "templates/claude-settings.json.template" ]; then
+    if prompt_yn "Install curated .claude/settings.json (permissions allowlist for Claude Code subagents)?" "y"; then
+        rename_template "templates/claude-settings.json.template" ".claude/settings.json"
+    else
+        echo "  Skipped. The template lives at templates/claude-settings.json.template — copy to .claude/settings.json when ready."
     fi
-done
+fi
+
+# Dependabot — weekly dependency bumps for Go modules + GitHub Actions.
+if [ -f ".github/dependabot.yml.template" ]; then
+    if prompt_yn "Enable Dependabot weekly dependency bumps?" "n"; then
+        rename_template ".github/dependabot.yml.template" ".github/dependabot.yml"
+    else
+        echo "  Skipped. Re-run later or rename the .template manually."
+    fi
+fi
+
+# govulncheck — Go vulnerability scan workflow.
+if [ -f ".github/workflows/govulncheck.yml.template" ]; then
+    if prompt_yn "Enable govulncheck workflow (weekly Go vulnerability scan + on go.mod PRs)?" "n"; then
+        rename_template ".github/workflows/govulncheck.yml.template" ".github/workflows/govulncheck.yml"
+    else
+        echo "  Skipped."
+    fi
+fi
+
+# nightly — slow-tests + extended fuzz harness.
+if [ -f ".github/workflows/nightly.yml.template" ]; then
+    if prompt_yn "Enable nightly workflow template (slow-tests + extended fuzz; project-specific matrix needs editing)?" "n"; then
+        rename_template ".github/workflows/nightly.yml.template" ".github/workflows/nightly.yml"
+        echo "  WARNING: edit .github/workflows/nightly.yml's matrix.include before merging — the placeholders won't compile against your code."
+    else
+        echo "  Skipped."
+    fi
+fi
 
 # -----------------------------------------------------------------
 # Step: agentic-review opt-in (variable + secret)
 # -----------------------------------------------------------------
-#
-# The workflow ships gated on the AGENTIC_REVIEW_ENABLED repo variable
-# so a freshly-instantiated template stays silent until the operator
-# explicitly opts in. We ask once here; everything below is a no-op if
-# the operator declines.
 
 echo
 echo "Agentic review (read-only Claude PR review) is OFF by default."
@@ -257,7 +335,6 @@ if [ "$ENABLE_AGENTIC_REVIEW" = "yes" ]; then
     echo "ANTHROPIC_API_KEY is required for the workflow to call Claude."
     echo "Leave empty to defer (the workflow will degrade gracefully)."
     printf "Anthropic API key (input hidden): "
-    # Read with -s if supported (bash). Fall back to plain read otherwise.
     if [ -n "${BASH_VERSION:-}" ]; then
         read -r -s ANTHROPIC_KEY
         echo
@@ -284,30 +361,28 @@ else
 fi
 
 # -----------------------------------------------------------------
-# Step: compliance-review label
+# Step: labels
 # -----------------------------------------------------------------
 
 echo
-echo "Creating 'compliance-review' label..."
-if gh api -X POST "/repos/$OWNER/$REPO/labels" \
-    -f name="compliance-review" \
-    -f color="b60205" \
-    -f description="Trust-boundary gate cleared by an authorised compliance reviewer" >/dev/null 2>&1; then
-    echo "  ok"
-else
-    # 422 Unprocessable Entity = label already exists. Treat as success.
-    echo "  already exists (or could not be created — check repo permissions)"
-fi
+create_label "compliance-review"        "b60205" "Trust-boundary gate cleared by an authorised compliance reviewer"
+create_label "agentic-review:skip"      "ededed" "Skip the read-only agentic PR review for this PR"
+create_label "agentic-review:degraded"  "e4b400" "Agentic review ran in degraded mode (e.g. missing API key); merge with caution"
+create_label "coverage-skip"            "fbca04" "Bypass per-package coverage gate; expected to be paired with a follow-up baseline-update PR"
 
-# Also create the agentic-review:skip label so operators can opt out.
-echo "Creating 'agentic-review:skip' label..."
-if gh api -X POST "/repos/$OWNER/$REPO/labels" \
-    -f name="agentic-review:skip" \
-    -f color="ededed" \
-    -f description="Skip the read-only agentic PR review for this PR" >/dev/null 2>&1; then
-    echo "  ok"
+# -----------------------------------------------------------------
+# Step: pre-push hook (optional)
+# -----------------------------------------------------------------
+
+echo
+if prompt_yn "Install strict-recipe pre-push git hook (recommended for agent-driven workflows)?" "n"; then
+    if [ -x "$REPO_ROOT/scripts/install-pre-push-hook.sh" ]; then
+        "$REPO_ROOT/scripts/install-pre-push-hook.sh"
+    else
+        echo "  error: $REPO_ROOT/scripts/install-pre-push-hook.sh not found or not executable" >&2
+    fi
 else
-    echo "  already exists (or could not be created)"
+    echo "Skipped. Install later with: ./scripts/install-pre-push-hook.sh"
 fi
 
 # -----------------------------------------------------------------
@@ -361,9 +436,13 @@ Next steps:
      for your stack. The job-shape and concurrency block carry over.
   2. Edit .github/CODEOWNERS to reference real team handles once they
      exist in your org.
-  3. Open a PR. Watch agentic-review post a sticky comment, and
+  3. (If you opted in to coverage-gate) populate ops/coverage-baseline.json
+     from ops/coverage-baseline.json.example and uncomment the
+     coverage-gate block in .github/workflows/ci.yml. See docs/setup.md
+     §Coverage gate.
+  4. Open a PR. Watch agentic-review post a sticky comment, and
      trust-boundary-gate fire if you touch a watched path.
-  4. Read docs/setup.md for verification steps and troubleshooting.
+  5. Read docs/setup.md for verification steps and troubleshooting.
 
 Re-running this script is safe — it is idempotent.
 EOF

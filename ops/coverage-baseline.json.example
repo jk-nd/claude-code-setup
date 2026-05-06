@@ -1,0 +1,6 @@
+{
+  "_comment": "Per-package minimum coverage thresholds enforced by the (opt-in) coverage-gate CI job. See docs/setup.md#coverage-gate for the operator procedure to populate, update, and roll forward this file. Replace the placeholder entry below with one row per compliance-critical package in your project. The coverage-gate binary fails the PR when a baselined package regresses below threshold (within a 0.05pp float-comparison slack); unbaselined packages dropping below 50% emit a WARN annotation only. The scaffolding is intentionally tiny — populate as you go; an empty file would block CI before the operator could opt in.",
+  "thresholds": {
+    "github.com/example/replace-me": 0.0
+  }
+}
