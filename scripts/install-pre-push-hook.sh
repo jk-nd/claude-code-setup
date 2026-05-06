@@ -94,7 +94,12 @@ go build ./...
 go vet ./...
 go test -short -timeout=300s -count=1 ./...
 go mod tidy
-git diff --exit-code go.mod go.sum
+# Only diff go.sum if it exists — greenfield repos with no deps don't have one yet.
+if [ -f go.sum ]; then
+    git diff --exit-code go.mod go.sum
+else
+    git diff --exit-code go.mod
+fi
 HOOK
 
 chmod +x "$HOOK_PATH"
