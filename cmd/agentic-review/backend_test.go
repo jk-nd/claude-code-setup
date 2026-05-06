@@ -147,7 +147,7 @@ func TestGitHubModelsAdapter_HappyPath(t *testing.T) {
 
 	b := newGitHubModelsBackend("ghs_test_token_value")
 	b.endpoint = srv.URL + "/inference/chat/completions"
-	b.model = "anthropic/claude-sonnet-4.5"
+	b.model = "openai/gpt-4.1"
 
 	res, err := b.Review(context.Background(), "system rubric", "the user prompt")
 	if err != nil {
@@ -168,8 +168,8 @@ func TestGitHubModelsAdapter_HappyPath(t *testing.T) {
 	if gotContentType != "application/json" {
 		t.Errorf("Content-Type = %q, want application/json", gotContentType)
 	}
-	if gotBody.Model != "anthropic/claude-sonnet-4.5" {
-		t.Errorf("body.model = %q, want anthropic/claude-sonnet-4.5", gotBody.Model)
+	if gotBody.Model != "openai/gpt-4.1" {
+		t.Errorf("body.model = %q, want openai/gpt-4.1", gotBody.Model)
 	}
 	if gotBody.MaxTokens != maxOutputTokens {
 		t.Errorf("body.max_tokens = %d, want %d", gotBody.MaxTokens, maxOutputTokens)
@@ -259,11 +259,11 @@ func TestGitHubModelsAdapter_NoChoices(t *testing.T) {
 // footer. Belt-and-braces for the "operator bumps the model
 // identifier" path.
 func TestGitHubModelsModelEnvOverride(t *testing.T) {
-	t.Setenv(githubModelsModelEnv, "anthropic/claude-sonnet-4.5-20260101")
-	if got := githubModelsModel(); got != "anthropic/claude-sonnet-4.5-20260101" {
+	t.Setenv(githubModelsModelEnv, "openai/gpt-4.1-20260101")
+	if got := githubModelsModel(); got != "openai/gpt-4.1-20260101" {
 		t.Errorf("githubModelsModel() = %q, want override", got)
 	}
-	if got := backendModelID(backendGitHubModels); got != "anthropic/claude-sonnet-4.5-20260101" {
+	if got := backendModelID(backendGitHubModels); got != "openai/gpt-4.1-20260101" {
 		t.Errorf("backendModelID(github-models) = %q, want override", got)
 	}
 }
