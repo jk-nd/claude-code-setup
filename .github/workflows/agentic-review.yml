@@ -2,10 +2,21 @@ name: agentic-review
 
 # Read-only agentic PR review.
 # An auxiliary Go binary (cmd/agentic-review) reads the PR's diff,
-# linked issue, and CI check-run summary, calls the Anthropic Messages
-# API, and posts a sticky comment summarising the findings. The agent
-# never pushes commits, never modifies labels, never bypasses the
+# linked issue, and CI check-run summary, calls one of the supported
+# LLM backends (GitHub Models OpenAI-compatible inference by default,
+# or the Anthropic Messages API when ANTHROPIC_API_KEY is configured),
+# and posts a sticky comment summarising the findings. The agent never
+# pushes commits, never modifies labels, never bypasses the
 # trust-boundary gate.
+#
+# Auth backends:
+#   - GitHub Models (default for personal-account use): authed via
+#     ${{ secrets.GITHUB_TOKEN }} when this workflow declares
+#     `permissions: { models: read }`. Free tier; no separate secret.
+#   - Anthropic direct: authed via ${{ secrets.ANTHROPIC_API_KEY }}.
+#     Selected automatically when the secret is set, or pinned via
+#     the AGENTIC_REVIEW_BACKEND repo variable.
+# See docs/agentic-review.md §Auth backends for the full matrix.
 #
 # Operator opt-out: apply the `agentic-review:skip` label to a PR.
 # Documentation: docs/agentic-review.md.
@@ -18,6 +29,11 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  # GitHub Models inference requires the workflow to declare this
+  # permission so ${{ secrets.GITHUB_TOKEN }} carries the bearer scope
+  # accepted by https://models.github.ai/inference/. Anthropic-direct
+  # operators still see no extra cost or signal from this declaration.
+  models: read
 
 # Cancel an in-flight run on the same PR when a fresh push lands; the
 # review only ever needs to reflect the latest HEAD.
@@ -61,8 +77,13 @@ jobs:
 
       - name: Run review
         env:
+          # Auth: the binary picks a backend based on which credentials
+          # are present plus the optional AGENTIC_REVIEW_BACKEND repo
+          # variable. GITHUB_TOKEN is always available; ANTHROPIC_API_KEY
+          # may be empty, in which case GitHub Models is used.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AGENTIC_REVIEW_BACKEND: ${{ vars.AGENTIC_REVIEW_BACKEND }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_WORKSPACE: ${{ github.workspace }}

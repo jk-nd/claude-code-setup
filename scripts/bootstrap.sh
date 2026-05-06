@@ -308,13 +308,14 @@ fi
 # -----------------------------------------------------------------
 
 echo
-echo "Agentic review (read-only Claude PR review) is OFF by default."
-printf "Enable it for this repo? [y/N] "
-read -r ENABLE_AGENTIC_REVIEW
-case "$ENABLE_AGENTIC_REVIEW" in
-    [yY]|[yY][eE][sS]) ENABLE_AGENTIC_REVIEW="yes" ;;
-    *) ENABLE_AGENTIC_REVIEW="no" ;;
-esac
+echo "Agentic review (read-only Claude PR review) is now ON by default —"
+echo "GitHub Models offers a free-tier path that uses the workflow's"
+echo "GITHUB_TOKEN, so there's no per-PR cost concern for personal repos."
+if prompt_yn "Enable agentic review?" "y"; then
+    ENABLE_AGENTIC_REVIEW="yes"
+else
+    ENABLE_AGENTIC_REVIEW="no"
+fi
 
 if [ "$ENABLE_AGENTIC_REVIEW" = "yes" ]; then
     echo "Setting variable AGENTIC_REVIEW_ENABLED=true on $OWNER/$REPO..."
@@ -332,32 +333,69 @@ if [ "$ENABLE_AGENTIC_REVIEW" = "yes" ]; then
     fi
 
     echo
-    echo "ANTHROPIC_API_KEY is required for the workflow to call Claude."
-    echo "Leave empty to defer (the workflow will degrade gracefully)."
-    printf "Anthropic API key (input hidden): "
-    if [ -n "${BASH_VERSION:-}" ]; then
-        read -r -s ANTHROPIC_KEY
-        echo
+    echo "Auth backend:"
+    echo "  - github-models: OpenAI-compatible endpoint hosted by GitHub."
+    echo "                   Free tier; uses the workflow's GITHUB_TOKEN."
+    echo "                   Recommended for personal repos."
+    echo "  - anthropic:     Anthropic Messages API direct."
+    echo "                   Paid; requires ANTHROPIC_API_KEY."
+    AGENTIC_REVIEW_BACKEND_CHOICE=$(prompt_default "Which backend? [github-models/anthropic]" "github-models")
+    case "$AGENTIC_REVIEW_BACKEND_CHOICE" in
+        anthropic|Anthropic|ANTHROPIC) AGENTIC_REVIEW_BACKEND_CHOICE="anthropic" ;;
+        *)                             AGENTIC_REVIEW_BACKEND_CHOICE="github-models" ;;
+    esac
+
+    echo "Setting variable AGENTIC_REVIEW_BACKEND=$AGENTIC_REVIEW_BACKEND_CHOICE..."
+    if gh variable set AGENTIC_REVIEW_BACKEND --repo "$OWNER/$REPO" --body "$AGENTIC_REVIEW_BACKEND_CHOICE" >/dev/null 2>&1; then
+        echo "  ok"
     else
-        read -r ANTHROPIC_KEY
+        if gh api -X POST "/repos/$OWNER/$REPO/actions/variables" \
+            -f name=AGENTIC_REVIEW_BACKEND -f value="$AGENTIC_REVIEW_BACKEND_CHOICE" >/dev/null 2>&1; then
+            echo "  ok (via REST)"
+        else
+            echo "  error: failed to set variable. Set it later via:" >&2
+            echo "    gh variable set AGENTIC_REVIEW_BACKEND --repo $OWNER/$REPO --body $AGENTIC_REVIEW_BACKEND_CHOICE" >&2
+        fi
     fi
 
-    if [ -n "$ANTHROPIC_KEY" ]; then
-        echo "Setting secret ANTHROPIC_API_KEY on $OWNER/$REPO..."
-        if printf '%s' "$ANTHROPIC_KEY" | gh secret set ANTHROPIC_API_KEY --repo "$OWNER/$REPO" --body -; then
-            echo "  ok"
+    if [ "$AGENTIC_REVIEW_BACKEND_CHOICE" = "anthropic" ]; then
+        echo
+        echo "ANTHROPIC_API_KEY is required for the Anthropic-direct backend."
+        echo "Leave empty to defer (the workflow will degrade gracefully)."
+        printf "Anthropic API key (input hidden): " >&2
+        if [ -n "${BASH_VERSION:-}" ]; then
+            read -r -s ANTHROPIC_KEY
+            echo >&2
         else
-            echo "  error: failed to set secret. Set it later via:" >&2
-            echo "    gh secret set ANTHROPIC_API_KEY --repo $OWNER/$REPO" >&2
+            read -r ANTHROPIC_KEY
+        fi
+
+        if [ -n "$ANTHROPIC_KEY" ]; then
+            echo "Setting secret ANTHROPIC_API_KEY on $OWNER/$REPO..."
+            if printf '%s' "$ANTHROPIC_KEY" | gh secret set ANTHROPIC_API_KEY --repo "$OWNER/$REPO" --body -; then
+                echo "  ok"
+            else
+                echo "  error: failed to set secret. Set it later via:" >&2
+                echo "    gh secret set ANTHROPIC_API_KEY --repo $OWNER/$REPO" >&2
+            fi
+        else
+            echo "Skipped. Set later with:"
+            echo "  gh secret set ANTHROPIC_API_KEY --repo $OWNER/$REPO"
         fi
     else
-        echo "Skipped. Set later with:"
-        echo "  gh secret set ANTHROPIC_API_KEY --repo $OWNER/$REPO"
+        echo
+        echo "GitHub Models requires no extra secret — the workflow's"
+        echo "GITHUB_TOKEN is sufficient. The workflow already declares"
+        echo "permissions: { models: read } so the token carries the"
+        echo "right scope on every PR run."
     fi
 else
     echo "Agentic review left disabled. Enable it later with:"
     echo "  gh variable set AGENTIC_REVIEW_ENABLED --repo $OWNER/$REPO --body true"
-    echo "  gh secret set   ANTHROPIC_API_KEY     --repo $OWNER/$REPO"
+    echo "  gh variable set AGENTIC_REVIEW_BACKEND --repo $OWNER/$REPO --body github-models"
+    echo "  # (or, for the Anthropic-direct backend:)"
+    echo "  gh variable set AGENTIC_REVIEW_BACKEND --repo $OWNER/$REPO --body anthropic"
+    echo "  gh secret   set ANTHROPIC_API_KEY      --repo $OWNER/$REPO"
 fi
 
 # -----------------------------------------------------------------
