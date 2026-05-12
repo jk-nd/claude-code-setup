@@ -1,165 +1,154 @@
-# AGENTS.md
+# AGENTS.md — orchestrator + agent-team operating contract (v2)
 
-Operating principles for any agent working on a repository instantiated from this template. Read this in full before making any change.
+This file is the **orchestrator's operating contract** for any project bootstrapped from `claude-code-setup` v2. When a Claude Code session starts in a repo carrying this file, the session **is** the orchestrator. Everything below describes how the orchestrator coordinates a team of specialized subagents to ship work, with human decisions concentrated upstream at the spec/plan layer.
 
-## Mental model
+Per-repo customization is expected; treat this file as the v2 default. Repos may add roles, tighten merge policy, or expand watched paths.
 
-```mermaid
-flowchart TB
-    H[Human orchestrator] -->|files issues| G[GitHub issues]
-    G -->|spawn subagent per issue| A[Subagent on isolated worktree]
-    A -->|branch from origin/main| B[feature branch]
-    B -->|build / vet / test / lint| V[verify locally]
-    V -->|push| D[Draft PR]
-    D -->|agentic-review sticky| R[Read-only review]
-    D -->|trust-boundary gate| T[Compliance routing]
-    D -->|human review| H
-    H -->|approve + merge| M[main]
+## The team
+
+The orchestrator dispatches the following subagents from `.claude/agents/`:
+
+| Subagent       | Job                                                                                          | Output                                              | Dispatched after                       |
+| -------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------- |
+| `architect`    | Turn an idea into a one-page technical approach, citing existing code                        | approach doc                                        | user request                           |
+| `spec-writer`  | Turn approved approach into a testable spec                                                  | spec doc                                            | approach approved                      |
+| `test-author`  | Write tests from the spec, blind to any implementation                                       | test files (red)                                    | spec approved                          |
+| `planner`      | Turn spec into a sequenced plan-mission                                                      | plan-mission doc                                    | spec approved (parallel `test-author`) |
+| `plan-reviewer`| Get a critique of the plan from Gemini and/or Opus                                           | critique appended to plan                           | plan drafted                           |
+| `implementer`  | Implement one plan-mission task on its own worktree                                          | code + doc updates + local tests green              | task picked from plan                  |
+| `adversary`    | Pre-PR review of implementer's diff against spec + tests                                     | pass / fail / needs-clarification + cited findings  | implementer commits                    |
+| `doc-keeper`   | Update affected docs per change; weekly audit catches drift                                  | doc updates in same diff / `doc-stale` issues       | implementer + cron                     |
+| `conductor`    | Compose morning digest from plan-mission state + git activity                                | digest                                              | timer / on-demand                      |
+
+The orchestrator itself does **not** write code, edit specs, or author tests. It dispatches, reads results, makes routing decisions, opens PRs, and merges per policy.
+
+## Where the human is in the loop
+
+The user decides at four points, and only four:
+
+1. **Approach** — accept/redirect `architect`'s approach doc before any spec work.
+2. **Spec** — accept/redirect `spec-writer`'s spec before plan + tests start.
+3. **Plan-mission** — accept/redirect `planner`'s mission (with `plan-reviewer` critique attached) before any implementation.
+4. **Compliance-routed PRs** — `trust-boundary.yml` forces a label/approval gate for PRs touching `WATCHED_PATHS`. The orchestrator cannot bypass this and must not try.
+
+The user does **not** review code. They do **not** review individual subagent outputs other than the four gates. They do **not** merge non-watched-path PRs. The agent team handles those.
+
+## The operating loop
+
+```
+user idea
+   │
+   ▼
+architect ─→ approach doc ─→ USER APPROVES ─→
+   │
+   ▼
+spec-writer ─→ spec doc ─→ USER APPROVES ─→
+   │
+   ├─→ test-author ─→ tests (red, parallel)
+   └─→ planner ─→ plan-mission ─→ plan-reviewer (Gemini + Opus) ─→ USER APPROVES ─→
+                                                                       │
+                                                                       ▼
+                                                                  per-task loop:
+                                                                       │
+                                       ┌───────────────────────────────┘
+                                       ▼
+                          implementer (on worktree)
+                                       │
+                                       ▼
+                          local tests + lint pass required
+                                       │
+                                       ▼
+                          adversary review
+                                  │
+                       ┌──────────┴────────────┐
+                       ▼ pass                  ▼ fail
+                  doc-keeper                  loop back to implementer
+                  (in same diff)              with adversary findings
+                       │
+                       ▼
+                  orchestrator opens non-draft PR
+                       │
+                       ▼
+                  CI runs (async backstop, not blocking)
+                       │
+                  ┌────┴───────────────────────┐
+                  ▼ non-watched path           ▼ watched path
+              orchestrator merges          PR waits for user
+                                          (trust-boundary forces this)
+                       │
+                       ▼
+                  plan-mission task → [done]
+                       │
+                       ▼
+                  next task
+
+(once mission complete:)
+                  conductor digest → user reads in morning
 ```
 
-The model in one paragraph: **a single human-driven orchestrator files GitHub issues; autonomous subagents pick up one issue each, work on isolated worktrees, verify locally, and open draft PRs.**
+## Merge policy
 
-## Roles
+The orchestrator merges PRs when **all** of these hold:
 
-Three distinct roles operate in this template. Each has different merge authority. Subagents (including any Cursor agents, GitHub Actions agents, or Claude Code subagents the orchestrator spawns) must NOT self-merge — that is the **single most-violated rule** in early-template instances.
+- `adversary` returned `pass` on the diff.
+- CI required checks have completed and are green. Poll with backoff (start 30s, exponential to 5min). If any required check exceeds 3 minutes wall-clock, return to other work and revisit; do not block.
+- `trust-boundary-gate` has either passed (no watched-path touched) or has been satisfied by a labeled compliance-review + approving review from a human. The orchestrator never satisfies trust-boundary itself.
+- No conflict with `main`.
 
-| Role | Examples | Can merge? |
-| --- | --- | --- |
-| **Human** | The repo owner / maintainer driving the operating-day | Always — final authority |
-| **Orchestrator** | A long-running Claude session (or other supervisor agent) that the human delegates the day's work to. Files issues, spawns subagents, coordinates reviews, merges after explicit human authorisation | Yes — after **explicit human authorisation** for that day's work. Never merges its OWN PR. |
-| **Subagent** | Any short-lived agent the orchestrator spawns: Claude subagents, Cursor's coding agents, GitHub Actions agents | **Never.** Opens draft PRs only. The orchestrator or human reviews + merges. |
+The orchestrator **must not**:
 
-### The author-merger rule
+- Approve its own PRs or self-approve to satisfy `require_code_owner_review`.
+- Bypass branch protection or rulesets.
+- Skip `adversary` review even when the diff feels trivial.
+- Edit `.github/workflows/**`, `.github/CODEOWNERS`, `go.mod`, `go.sum`, or anything in `WATCHED_PATHS` without escalating to the user as an Open Question first.
 
-**The merger of a PR must NOT be the same identity as the PR's author.** This is enforced (preventively) by GitHub branch protection requiring an approval from a non-author, AND surfaced (post-fact) by the agentic-review's "process violation" check. Even an orchestrator may not merge its own PRs — those need a human, or a different orchestrator session with human authorisation.
+## Plan-mission discipline (living artifact)
 
-Why: subagents (and Cursor) have repeatedly self-merged in early operating-day sessions. The author-merger rule plus branch protection together close that gap. Without it, the discipline of "draft PRs, human merges" decays into "agent ships unreviewed."
+Every non-trivial piece of work has a plan-mission at `docs/plan-missions/<slug>.md` produced by `planner` from the template at `docs/templates/plan-mission.md`. The mission is a **living document** that the team updates:
 
-## Subagent rules
+- `implementer` updates each task's status marker (`[ ]` → `[~]` → `[x]` / `[d]` / `[?]`) as work proceeds.
+- `implementer` appends to the **Discovered constraints** log when execution reveals something the plan didn't predict.
+- `planner` re-enters the loop only if discoveries materially change the mission shape; minor adjustments happen in-place.
+- `conductor` reads the mission to compose the morning digest.
 
-A subagent is a process (Claude or otherwise) given exactly one issue and exactly one branch. It must:
+If you sleep at 11pm with a mission in flight, the mission doc at 7am is the answer to "what happened?".
 
-- **Branch from the latest `origin/main`.** Always rebase onto `origin/main` before pushing.
-- **Work in `/tmp/<scratch-name>`** or another scratch directory. Never use the orchestrator's main checkout.
-- **Verify before push — full recipe.** Run **every gate CI runs**, locally, before opening a PR. The default `go test ./...` is insufficient — CI runs stricter. The minimum recipe for a Go project (adapt for other stacks):
+## Doc-keeper discipline
 
-  ```sh
-  # 1. Stage and commit FIRST. Verifying on a dirty tree is the failure
-  #    mode that ate hours during the 2026-04-26/27 operating-day:
-  #    agent verified clean on uncommitted changes, then pushed an
-  #    OLDER commit. The pre-push hook (scripts/install-pre-push-hook.sh)
-  #    enforces this; install it once with:
-  #        ./scripts/install-pre-push-hook.sh
-  git add <changed files> && git status                 # confirm staging
-  git commit -m "..."                                   # commit then verify
+Documentation drifts unless an explicit role owns keeping it current. Two triggers:
 
-  # 2. Verify against the committed state.
-  go build ./...
-  go vet ./...
-  go test ./... -short -timeout=300s -count=1            # baseline
-  go test -race -count=1 -timeout=600s ./...             # CI runs -race; skipping = race-condition surprises in CI
-  go mod tidy && git diff --exit-code go.mod go.sum      # CI fails if tidy produces a diff
-  golangci-lint run --timeout=5m ./...                   # install locally; do not rely on CI
+- **Per-merge (in the same PR):** `implementer` runs `doc-keeper` against its diff before opening the PR. Any user-facing surface touched (README sections, `docs/**`, `AGENTS.md`, godoc on exported symbols, plan-mission progress) MUST have a matching doc update in the same diff. `adversary`'s **Doc-freshness** dimension fails the review otherwise.
+- **Weekly audit (`.github/workflows/docs-audit.yml`):** GHA cron runs `doc-keeper` in audit mode against the whole repo. Each divergence becomes an issue with the `doc-stale` label, routing through the normal orchestrator flow.
 
-  # Plus any project-specific gates the CI runs:
-  #   - go test -tags e2e ./test/e2e/...                 (if the project ships an e2e tag)
-  #   - go test -coverprofile=cov.out ./... && go run ./cmd/coverage-gate ...   (if a coverage gate exists)
-  #   - go test -fuzz=FuzzX -fuzztime=60s ./pkg          (if fuzz targets exist that CI exercises)
-  ```
+## CI is an async backstop, not a gating loop
 
-  **Why this is non-negotiable:** CI runs `-race`, runs `go mod tidy && git diff --exit-code`, and may run a coverage gate that fails on regression. A passing local `go test ./...` is not equivalent. Agents that skip these have shipped PRs that were red on CI for hours before a human triaged. **Belt-and-braces: the strict recipe, not the loose one.**
+The orchestrator **does not wait** for slow CI to make decisions. The local `implementer` worktree runs build + unit tests + lint before opening the PR — that's the fast loop. CI's `build-and-test` runs again on GHA as a cross-environment safety net. Nightly fuzz / slow-tests / coverage gates run in the background and open issues for failures; they do not block merges.
 
-  **Commit-first ordering matters.** After `git add`, run `git status` to confirm everything is staged, then `git commit`, **then** run the verify recipe. The pre-push hook (installed via `./scripts/install-pre-push-hook.sh`) enforces this by refusing pushes when the working tree is dirty. Direct response to the failure mode where verification ran on uncommitted changes and the agent pushed the wrong commit.
-- **Open a draft PR** when ready. Mark ready-for-review only when the orchestrator instructs.
-- **Never merge.** Subagents do not merge — period, regardless of how trivial the change. See the [Roles](#roles) section above for the three-role model and the author-merger rule.
-- **Never force-push** unless the orchestrator explicitly asks.
-- **Never modify the trust-boundary CI gate workflow** (`.github/workflows/trust-boundary.yml`) or the agentic-review workflow without explicit instruction. These are compliance-relevant infrastructure.
-- **Never close the linked issue manually.** Merging the PR closes it via `Closes #N`.
+If a CI job runs longer than ~3 minutes, it is by definition a backstop, not a gate. Do not configure it as a required check unless its value justifies blocking pilot velocity.
 
-## Issue-first workflow
+## Permission-mode posture for unattended runs
 
-Every change starts as a GitHub issue. The flow:
+Subagents declare per-tool allowlists in their definition files. For unattended (overnight, traveling) operation, the orchestrator should:
 
-1. **File issue.** Use the appropriate archetype: `epic`, `sub-issue`, `hardening`, `testing`, `ci`. Acceptance criteria are checkboxes; scope is numbered.
-2. **Epic-sub-split if large.** Issues over ~3 days of work are split into an epic + sub-issues with a dependency table. Critical-path items are flagged.
-3. **Spawn subagent.** The orchestrator hands an issue + branch name to one subagent. One issue per subagent.
-4. **Draft PR.** The subagent opens a draft PR with the body following the PR template (Summary, Test plan, Boundaries respected, `Closes #N`).
-5. **Agentic review fires.** The read-only Claude review posts a sticky comment with findings against six dimensions.
-6. **Human approves and merges.** The orchestrator reviews on GitHub, approves, and merges. The agent's worktree is now done.
+- Not prompt for permission within a subagent's declared allowlist.
+- Halt only on (a) compliance-routed PRs via trust-boundary, or (b) genuine ambiguity flagged by `adversary` as `needs-clarification`, or (c) a subagent requesting a tool outside its allowlist.
+- Log every halt in the plan-mission's **Open questions** section so the user sees it in the morning digest.
+- Continue with independent tasks while one task is stalled.
 
-## Boundary rules
+## On second opinions for plans
 
-These four are the hardest-won lessons; honour them.
+Plans get the second-opinion pass via `plan-reviewer`, which calls `scripts/second-opinion.py`. The defaults are:
 
-- **Don't reinvent — integrate.** For compliance / security / ops capabilities, default to plugging into existing enterprise infrastructure (WORM, SIEM, IdP, KMS, DLP, GRC) rather than building inside the gateway. If you find yourself implementing something that an enterprise system already does, stop and propose an integration instead.
-- **Don't comment what the code already says.** Godoc on exported types is fine. Inline comments inside function bodies should explain *why* something non-obvious is done, not *what* the code does. One short line max. If a comment restates the code, delete it.
-- **Don't add backwards-compat hacks** unless explicitly asked. Greenfield code should be clean; if you find yourself preserving a deprecated path "just in case", ask first.
-- **Don't add features beyond the task.** The issue defines the scope. If you spot an adjacent gap, file a follow-up issue — do not gold-plate the current PR.
+- **Gemini 2.5/3 Pro** — different model family, free tier via AI Studio API key (`GOOGLE_AI_STUDIO_API_KEY`).
+- **Claude Opus** — same family, deeper reasoning, uses your Claude subscription via the local `claude --print` CLI.
 
-## Compliance posture
+Critiques are appended to the plan as `## Second opinion: gemini` / `## Second opinion: opus` sections. The user reads them alongside the plan when approving.
 
-The trust-boundary CI gate (`.github/workflows/trust-boundary.yml`) routes PRs that touch compliance-sensitive paths through the `compliance-review` team via CODEOWNERS, requiring either the `compliance-review` label or an approving review on the current HEAD. The watched paths are configured at template-instantiation time; the gate fails closed when a watched path is touched without the required signal.
+The point is divergent priors, not consensus. Disagreement between the critics is signal. Surface disagreements; let the user decide.
 
-For projects that are framed as deployable-with-agents-AND-compliant (ISO / SOC / GDPR / EU-AI-Act / NIST / DORA), the trust-boundary gate is non-negotiable. It is the audit trail an external assessor reaches for first.
+## What this contract does NOT cover
 
-## Coverage gate (when enabled)
-
-If the project's `.github/workflows/ci.yml` has the `coverage-gate:` job uncommented, the gate enforces a per-package baseline (`ops/coverage-baseline.json`).
-
-| Outcome | Threshold | Action |
-| --- | --- | --- |
-| **PASS** | measured ≥ baseline (with 0.05pp slack) | Nothing to do. |
-| **FAIL** | a baselined package regressed | The PR check goes red. **Two paths to clear:** |
-| **WARN** | unbaselined package below 50% | Annotation only. Optional cleanup. |
-
-**Two paths to clear a FAIL.** Pick by the SHAPE of the regression, not convenience:
-
-| Situation | Path |
-| --- | --- |
-| Permanent drop (deleted module, restructured packages) | File a **separate baseline-update PR** that lowers the threshold to the new measured-current floor. Land it BEFORE the dependent change. |
-| Temporary dip (in-flight refactor with planned follow-up tests, doc-only PR with measurement noise on an unrelated package) | Apply the **`coverage-skip` label** to the PR. The gate logs everything, writes the step summary, and exits 0. The label is auditable in the PR timeline. |
-| Test-only PR whose purpose is to expose existing gaps | `coverage-skip` label. The PR's intent IS to ship below baseline temporarily; the label makes the intent explicit. |
-
-**Mixing paths is a process violation.** Applying the label AND quietly editing the baseline in the same PR defeats the audit-trail purpose of both.
-
-Run the gate locally before push:
-
-```sh
-go test -coverprofile=cov.out -short -timeout=300s ./...
-go run ./cmd/coverage-gate --baseline=ops/coverage-baseline.json --profile=cov.out
-```
-
-## Dependabot (when enabled)
-
-If `.github/dependabot.yml` is present, Dependabot opens weekly bump PRs for Go modules and GitHub Actions.
-
-| Update type | Default expectation |
-| --- | --- |
-| `version-update:semver-patch` | Auto-merge candidate (the auto-merge automation is a separate follow-up issue; until shipped, treat these as fast-track human review). |
-| `version-update:semver-minor` | Auto-merge candidate, same caveat. |
-| `version-update:semver-major` | **Manual review required.** Major bumps can carry breaking changes; the human reviewer must read the upstream changelog. |
-
-A Dependabot PR that's stale because main moved underneath it can be rebased by commenting `@dependabot rebase`. (An auto-rebase cron is filed as a follow-up issue.)
-
-## Cost discipline
-
-The agentic-review workflow has hard caps:
-
-| Knob | Value | Rationale |
-| --- | --- | --- |
-| Max input tokens (approx) | 50,000 | Diff is shrunk by dropping bodies of files >200 lines |
-| Max output tokens | 2,000 | Hard cap on response length |
-| Anthropic call deadline | 4 minutes | Workflow times out instead of hanging |
-| Concurrency cancellation | `cancel-in-progress: true` | A fresh push cancels the in-flight review |
-
-Per-PR review cost ceiling is ~$0.83 worst-case at current Opus pricing. To opt a PR out of agentic review entirely, apply the `agentic-review:skip` label. To opt out a whole branch, apply the label and merge first.
-
-## When to ask the orchestrator
-
-- The issue is ambiguous and you would have to guess.
-- The architecture document seems wrong for your slice.
-- A library you need is not in the project's dependency manifest.
-- A test you cannot make pass; it is better to surface this than to disable it.
-- You want to touch a file outside your declared scope.
-
-If in doubt, ask. A 30-second clarification on the issue is cheaper than a wrong PR.
+- The actual code review (that's `adversary`'s job, per change).
+- Per-package coding conventions (live in language-specific style docs / lint configs).
+- Branch protection / ruleset setup (one-time admin task; see repo README).
+- Deploys / releases (out of scope for v2; add a `release-manager` subagent if needed).

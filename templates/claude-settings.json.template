@@ -71,6 +71,7 @@
       "Bash(jq *)",
       "Bash(python3 -c *)",
       "Bash(python3 *)",
+      "Bash(claude --print *)",
       "Bash(sleep *)",
 
       "Bash(cat *)",

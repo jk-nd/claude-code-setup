@@ -1,167 +1,142 @@
-# claude-code-setup
+# claude-code-setup (v2)
 
-> Opinionated template for running an orchestrator + autonomous-subagent setup against a single GitHub repository, distilled from operating practice on [`jk-nd/go-mcp-gw`](https://github.com/jk-nd/go-mcp-gw).
+> Opinionated template for running a specialised agent team — `architect`, `spec-writer`, `test-author`, `planner`, `plan-reviewer`, `implementer`, `adversary`, `doc-keeper`, `conductor` — against a single GitHub repository. The human (you) makes decisions at the spec / plan / architecture layer; the team handles implementation, internal review, doc maintenance, and merge.
 
 ## TL;DR
 
-| | |
+|  |  |
 | --- | --- |
-| What you get | Agentic PR review (read-only), trust-boundary CI gate, CODEOWNERS, issue + PR templates, `AGENTS.md` operating principles, bootstrap script |
-| What you bring | A language-specific `ci.yml` (template ships a Go example), team handles, branch-protection settings |
-| How to start | Click "Use this template" on GitHub, then run `scripts/bootstrap.sh` |
-| Required secret | None for the **default backend** (GitHub Models, free-tier, authed via `GITHUB_TOKEN`). `ANTHROPIC_API_KEY` is only needed if you opt in to the Anthropic-direct backend — see [Authentication](#authentication). |
-| Repo-level review on/off | Variable `AGENTIC_REVIEW_ENABLED=true` to turn it on; unset to turn off. Backend selected via `AGENTIC_REVIEW_BACKEND=github-models` (default) or `anthropic`. |
-| Cost ceiling | $0 on the GitHub Models backend (free tier); ~$0.83 worst-case per PR on the Anthropic-direct backend. Opt out per-PR via the `agentic-review:skip` label. |
+| What you get | 9 subagent definitions, plan-mission template, trust-boundary CI gate, Gemini + Opus plan-review pipeline, weekly docs audit, lean CI defaults |
+| What you bring | A language-specific `ci.yml`, team handles, branch-protection settings, a Google AI Studio API key (free) |
+| How to start | Click **Use this template** on GitHub (use the `v2` branch), then `scripts/bootstrap.sh` |
+| Required keys | `GOOGLE_AI_STUDIO_API_KEY` env var (free tier) for plan second opinions. Claude Code login (Max/Ultra via OAuth) for everything else. No per-PR LLM cost. |
+| Where the human is | Approach, spec, plan-mission, compliance-routed PRs. Not on every PR. Not in code review. |
 
-## What this gives you
+## The operating model in one paragraph
 
-```mermaid
-flowchart LR
-    O[Orchestrator] -->|files issues| GH[GitHub issues]
-    GH --> A1[Subagent on worktree 1]
-    GH --> A2[Subagent on worktree 2]
-    GH --> A3[Subagent on worktree N]
-    A1 --> PR1[Draft PR]
-    A2 --> PR2[Draft PR]
-    A3 --> PR3[Draft PR]
-    PR1 --> CI[CI: build / test / vet / lint]
-    PR2 --> CI
-    PR3 --> CI
-    CI --> AR[Agentic review<br/>read-only sticky]
-    CI --> TB[Trust-boundary gate<br/>label or approval]
-    AR --> H[Human reviewer]
-    TB --> H
-    H -->|merge| M[main]
+The orchestrator is your Claude Code session running in the project directory. You give it an idea; it dispatches `architect` (one-page approach), then `spec-writer` (testable spec), then `test-author` (red tests from spec) in parallel with `planner` (sequenced plan-mission). The plan is critiqued by Gemini *and* Opus via `plan-reviewer` before you approve it. Once approved, `implementer` instances spawn on git worktrees per task, with `adversary` running pre-PR review (different model class than the implementer) and `doc-keeper` ensuring docs ship with the code. The orchestrator opens and merges PRs when adversary passes and CI is green. Compliance-routed PRs — those touching `WATCHED_PATHS` — still require your label or approval via the trust-boundary gate. A `conductor` subagent produces a morning digest from the plan-mission's living state.
+
+You decide at four points: approach, spec, plan, and compliance-routed PRs. You do **not** review code.
+
+See [`AGENTS.md`](AGENTS.md) for the full operating contract.
+
+## The flow
+
+```
+user idea
+   │
+   ▼
+architect ─→ approach doc ─→ USER APPROVES ─→
+   │
+   ▼
+spec-writer ─→ spec ─→ USER APPROVES ─→
+   │
+   ├─→ test-author ─→ red tests
+   └─→ planner ─→ plan-mission ─→ plan-reviewer (Gemini + Opus) ─→ USER APPROVES ─→
+                                                                       │
+                                                                       ▼
+                                                              per-task loop:
+                                       ┌───────────────────────────────┘
+                                       ▼
+                          implementer (on worktree)
+                                       │
+                                       ▼
+                          adversary review
+                                  │
+                       ┌──────────┴───────────┐
+                       ▼ pass                  ▼ fail
+                  doc-keeper                  loop back to implementer
+                  (same diff)
+                       │
+                       ▼
+                  orchestrator opens PR
+                       │
+                       ▼
+                  CI (async backstop)
+                       │
+                  ┌────┴───────────────────────┐
+                  ▼ non-watched path           ▼ watched path
+              orchestrator merges          USER merges via
+                                          trust-boundary gate
 ```
 
-The four moving parts:
+## The team
 
-1. **Orchestrator + subagents on worktrees.** One human-driven orchestrator files issues; subagents work autonomously on isolated branches, opening draft PRs.
-2. **Agentic PR review** (`.github/workflows/agentic-review.yml` + `cmd/agentic-review/`). Read-only Claude review on every non-draft PR push, posting a sticky comment with findings against six dimensions (lint, tests, citations, issue refs, architectural invariants, stale claims).
-3. **Trust-boundary CI gate** (`.github/workflows/trust-boundary.yml`). Compliance-routed PRs require either the `compliance-review` label or an approving review on the current HEAD; sticky comment summarises which paths tripped the gate.
-4. **Issue + PR templates** (`.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md`). Five issue archetypes (epic, sub-issue, hardening, testing, ci) and a PR template that mirrors the structure agents follow.
-
-## Operating loop
-
-Once bootstrapped, the day-to-day loop is: **file an issue → spawn a subagent → review the draft PR → merge.** The agent does the work on an isolated worktree, opens a draft PR, and CI + agentic-review + trust-boundary gate all fire automatically. You read the sticky review, label / approve, and merge. Issue auto-closes via `Closes #N`.
-
-```mermaid
-flowchart LR
-    I[1. File issue] --> S[2. Spawn subagent]
-    S --> P[3. Draft PR opens<br/>CI + agentic-review<br/>+ trust-boundary fire]
-    P --> R[4. Review sticky<br/>label / approve / merge]
-    R --> C[5. Cleanup<br/>worktree removed<br/>issue auto-closes]
-    C --> I
+```
+.claude/agents/
+  architect.md      idea → approach doc
+  spec-writer.md    approach → testable spec
+  test-author.md    spec → red tests (implementation-blind)
+  planner.md        spec → sequenced plan-mission
+  plan-reviewer.md  plan → Gemini + Opus critiques appended
+  implementer.md    one task → code + docs + tests green on worktree
+  adversary.md      diff → pass / fail / needs-clarification
+  doc-keeper.md     diff or repo → doc updates / doc-stale issues
+  conductor.md      live state → morning digest
 ```
 
-See [`docs/operating.md`](docs/operating.md) for the step-by-step walkthrough, including agent-prompt templates and a troubleshooting matrix.
+Each agent is project-scoped (lives under `.claude/agents/` in the repo). Their tool allowlists are tuned for unattended (overnight) operation: `implementer` and `test-author` can run without permission prompts; `adversary` uses Opus by default for a different-model-class adversarial review of the Sonnet-class `implementer` work.
 
 ## How to use
 
-1. Click **Use this template** in the GitHub UI to create a new repo from this one.
+1. Click **Use this template** on GitHub (pick the `v2` branch), or push a fresh clone of `v2` to your new repo's `main`.
 2. Clone the new repo locally.
-3. Run `scripts/bootstrap.sh`. The script will:
+3. Run `scripts/bootstrap.sh`. It will:
    - Detect owner/name from `gh repo view`.
-   - Substitute `${OWNER}`, `${REPO}`, `${WATCHED_PATHS}` placeholders across `*.template` files and rename them to their final names.
-   - Prompt whether to enable **agentic PR review** for this repo (default: yes). If yes, it asks which backend (default: GitHub Models, free tier; alternatively Anthropic API direct). For GitHub Models, no secret is required — the workflow uses `GITHUB_TOKEN`. For Anthropic-direct, the script prompts for `ANTHROPIC_API_KEY`. If you decline, the workflow ships in the repo but stays silent until you opt in later.
-   - Create the `compliance-review` label.
-   - Optionally create initial branch protection on `main`.
-4. Replace the Go-flavoured `.github/workflows/ci.yml` with one for your stack (the template ships a Go example as a starting point).
-5. Edit `.github/CODEOWNERS` to reference your real team handles.
-6. Open a PR and watch the trust-boundary workflow fire (and agentic-review if you opted in).
-
-See [`docs/setup.md`](docs/setup.md) for a step-by-step walkthrough and troubleshooting.
+   - Prompt for `WATCHED_PATHS` (defaults include `.github/workflows/`, `go.mod`, `go.sum`, `.github/CODEOWNERS` plus your project-specific compliance paths).
+   - Substitute placeholders and rename `*.template` files.
+   - Create labels: `compliance-review`, `doc-stale`.
+   - Optionally configure branch protection / ruleset on `main`.
+4. Edit `.github/CODEOWNERS` to reference real team handles once they exist.
+5. Replace the Go-flavoured `.github/workflows/ci.yml` with one for your stack (the bootstrap renames the `.template`; the contents are the placeholder you need to swap).
+6. Set `GOOGLE_AI_STUDIO_API_KEY` in your shell env (free key at https://aistudio.google.com).
+7. Start the orchestrator: `cd <repo> && claude`.
+8. Tell it what to build. Approve at the four gates as work proceeds.
 
 ## What's in the box
 
 | Path | Purpose |
 | --- | --- |
-| `AGENTS.md` | Operating principles for orchestrator + subagents. Read this first. |
-| `.github/workflows/agentic-review.yml` | Read-only Claude PR review. Sticky-comment pattern. |
+| `AGENTS.md` | Orchestrator operating contract. Read this first. |
+| `.claude/agents/*.md` | The 9 subagent definitions (project-scoped). |
+| `templates/claude-settings.json.template` | Curated permissions allowlist. Bootstrap copies to `.claude/settings.json`. |
+| `scripts/second-opinion.py` | Calls Gemini (AI Studio free tier) or Opus (via local `claude --print`) for plan critiques. |
+| `docs/templates/plan-mission.md` | Living-artifact format `planner` writes from. |
+| `.github/workflows/ci.yml.template` | Go-flavoured CI example. Replace with your stack's toolchain. |
 | `.github/workflows/trust-boundary.yml` | Compliance gate keyed off watched paths + label / approval. |
-| `.github/workflows/ci.yml.template` | Go-flavoured example CI with paths-filter pattern + actionlint gate; replace with your stack's toolchain. |
-| `.github/workflows/govulncheck.yml.template` | (Opt-in) Weekly Go vulnerability scan + per-PR scan on `go.mod` changes. |
-| `.github/workflows/nightly.yml.template` | (Opt-in) Slow-tests + extended fuzz harness on a daily cron. |
-| `.github/dependabot.yml.template` | (Opt-in) Weekly dependency bumps for Go modules + GitHub Actions. |
-| `.github/CODEOWNERS.template` | Skeleton with `${WATCHED_PATHS}` and `${OWNER}` placeholders. |
-| `.github/ISSUE_TEMPLATE/` | Five archetypes: epic, sub-issue, hardening, testing, ci. |
-| `.github/PULL_REQUEST_TEMPLATE.md` | Summary / Test plan / Boundaries / Closes. |
-| `cmd/agentic-review/` | Stdlib-only Go binary that drives the read-only review. |
-| `cmd/coverage-gate/` | (Opt-in) Stdlib-only Go binary that enforces a per-package coverage baseline. |
-| `ops/coverage-baseline.json.example` | Starter baseline for the coverage gate; copy to `ops/coverage-baseline.json` to enable. |
-| `templates/claude-settings.json.template` | (Opt-in) Curated permissions allowlist for Claude Code subagents working in the repo. Bootstrap copies it to `.claude/settings.json`. |
-| `docs/agentic-review.md` | Operator-facing docs: cost, opt-out, safety boundaries. |
-| `docs/setup.md` | Bootstrap walkthrough, coverage-gate procedure, pre-push hook docs. |
-| `scripts/bootstrap.sh` | Idempotent setup script: placeholders, secrets, labels, opt-in template renames, branch protection. |
-| `scripts/install-pre-push-hook.sh` | Standalone installer for the strict-recipe pre-push hook (refuses dirty-tree push, runs build/vet/short-test/`go mod tidy` diff). |
+| `.github/workflows/docs-audit.yml.template` | (Opt-in) Weekly cron opens a `doc-stale` audit issue for the orchestrator. |
+| `.github/workflows/govulncheck.yml.template` | (Opt-in) Weekly Go vulnerability scan. |
+| `.github/workflows/nightly.yml.template` | (Opt-in) Slow tests + fuzz. **Only enable if your project has fuzz / slow surfaces.** Default for pilots: leave off. |
+| `.github/dependabot.yml.template` | (Opt-in) Weekly dependency bumps. |
+| `.github/CODEOWNERS.template` | Skeleton with `${WATCHED_PATHS}` placeholders. |
+| `.github/ISSUE_TEMPLATE/` | Six archetypes: epic, sub-issue, hardening, testing, ci, doc-stale. |
+| `.github/PULL_REQUEST_TEMPLATE.md` | Summary / test plan / boundaries / closes. |
+| `cmd/coverage-gate/` | (Opt-in) Per-package coverage baseline enforcement. |
+| `scripts/bootstrap.sh` | Idempotent setup script. |
+| `scripts/install-pre-push-hook.sh` | Standalone installer for the strict pre-push hook. |
 
 ## What's not
 
-This template is intentionally narrow. It does **not** ship:
+- A migration guide from v1. v2 is for new repos. v1 repos stay on the `main` branch's previous state.
+- A language-specific build pipeline. `ci.yml.template` is Go-flavoured as a starting point; swap it for your stack.
+- Pre-populated team handles. The bootstrap fills in `${OWNER}`; the `compliance-review` team must be created in your org.
+- Branch protection pre-applied. Bootstrap offers to do it.
+- An always-on agentic PR review. v1 had one (`cmd/agentic-review/`); empirical audit showed it produced near-zero useful signal. v2 moves review **upstream** into the `adversary` subagent (pre-PR, full orchestrator context, opt-out impossible by design).
 
-- A language-specific build pipeline. The `ci.yml.template` example uses Go; replace it with your toolchain (Node, Python, Rust, etc.). The agentic-review and trust-boundary workflows are language-agnostic.
-- Pre-populated team handles. `${OWNER}` is filled in by the bootstrap script; `compliance-review` is a placeholder team you must create in your org.
-- Branch-protection rules pre-applied. The bootstrap script offers to create them; you decide which checks are required.
-- Auto-deletion of `scripts/bootstrap.sh`. The script is idempotent — keep it for re-runs.
+## Differences from v1
 
-## Authentication
+- **No CI-side agentic review.** `cmd/agentic-review/` and `.github/workflows/agentic-review.yml` removed. Replaced by the `adversary` subagent running pre-PR with full context.
+- **Agent team with specialised roles.** v1 had a single "subagent" pattern; v2 ships 9 distinct roles with narrow allowlists and clear hand-offs.
+- **Plan-for-plan with two critics.** v2 ships `plan-reviewer` + `second-opinion.py` for Gemini + Opus critiques on every plan.
+- **Doc-keeper as a first-class role.** v1 left documentation drift unowned; v2 makes `doc-keeper` run per-merge and weekly.
+- **Lean CI by default.** v1's bootstrap heavily promoted agentic-review and slow-test workflows; v2 defaults to `ci.yml` + `trust-boundary.yml` + `govulncheck.yml.template` (opt-in) only.
+- **The human checkpoint moves upstream.** v1 said "never merge from an agent" and put the human at every PR. v2 places the human at approach / spec / plan / compliance-routed PRs only. The agent team merges the rest, gated by `adversary` and CI.
 
-The agentic-review workflow needs to call Claude. There are three ways to wire that up; the trust-boundary gate and standard CI work regardless.
-
-| Option | Backend | Per-PR cost | Auth admin effort | Best for |
-| --- | --- | --- | --- | --- |
-| **A (default)** — GitHub Models | OpenAI-compatible endpoint hosted by GitHub | $0 (free tier) | none — uses workflow `GITHUB_TOKEN` | Personal repos, individual developers, anyone who wants the review running on day one without billing setup |
-| **B** — Anthropic API direct | Anthropic Messages API | ~$0.05–$0.20 typical, ~$0.83 ceiling | one repo secret (`ANTHROPIC_API_KEY`) | Teams already paying Anthropic, or running so many PRs that the GitHub Models free-tier cap becomes a constraint |
-| **C** — disabled | (no LLM call) | $0 | none | Teams not yet ready to opt in; trust-boundary + CI continue to work |
-
-You can switch backends later by re-running `scripts/bootstrap.sh` or editing the `AGENTIC_REVIEW_BACKEND` repo variable. The two binaries share the same prompt and post the same sticky-comment shape; only the API call layer changes.
-
-### Option A — GitHub Models (default, free tier)
-
-The default path on a fresh template instantiation. GitHub Models is GitHub's hosted OpenAI-compatible inference endpoint at `https://models.github.ai/inference/`; it accepts the workflow's `GITHUB_TOKEN` as a bearer token when the workflow declares `permissions: { models: read }`. The shipped `cmd/agentic-review` binary's `github-models` adapter calls that endpoint with the model identifier `anthropic/claude-sonnet-4.5` (overridable via `AGENTIC_REVIEW_GITHUB_MODELS_MODEL`).
-
-- **Cost:** $0 on the published free tier. Rate limits are generous for low-volume use (one LLM call per PR push, ~50K input / 2K output tokens, concurrency-cancelled on a fresh push). When the free-tier window is exhausted, the adapter surfaces a `429 rate-limited` error in the degraded-mode comment and the next push retries.
-- **Setup:** zero extra steps. The bootstrap script defaults to this backend; no secret is required.
-- **Best for:** personal repos and individual developers — removes the per-PR cost concern that historically pushed solo maintainers to skip the review entirely.
-
-### Option B — Anthropic API direct (paid)
-
-The historical default. The bootstrap script prompts for an Anthropic API key when the operator picks this backend and sets it as a repo secret via `gh secret set`. The shipped `cmd/agentic-review` binary's `anthropic` adapter calls the Anthropic Messages API directly with that key.
-
-- **Cost:** ~$0.05–$0.20 per PR push at current Opus pricing; per-PR ceiling capped at ~$0.83 by the binary's input/output token caps. See [`docs/agentic-review.md`](docs/agentic-review.md#cost-expectations) for the full table.
-- **Setup:** set `AGENTIC_REVIEW_BACKEND=anthropic` (repo variable) and `ANTHROPIC_API_KEY` (repo secret). The bootstrap script does both.
-- **Best for:** teams already paying for Anthropic API usage, or where adding an org-level API key is administratively simple.
-
-### Option C — skip agentic review entirely
-
-The template ships with the workflow gated on the `AGENTIC_REVIEW_ENABLED` repo variable. **If you don't set that variable, the workflow is silent** — it runs the trigger but the job's `if:` evaluates to false, so no checkout, no API call, no comment. The trust-boundary CI gate and standard CI continue to work; you lose the read-only PR review automation but keep the compliance-routing and quality gates.
-
-To turn it on later: set `AGENTIC_REVIEW_ENABLED=true` and pick a backend. To turn it off again: unset the variable.
-
-- **Cost:** $0.
-- **Best for:** teams not yet ready to commit to either backend, but who want the trust-boundary gate today.
-
-### Switching between options
-
-Re-run `scripts/bootstrap.sh` (the safest path — it idempotently updates the repo variables and only re-prompts for the secret if the chosen backend needs one), or set the variables directly:
-
-```sh
-# Switch to GitHub Models (default; no secret required).
-gh variable set AGENTIC_REVIEW_BACKEND --repo $OWNER/$REPO --body github-models
-
-# Switch to Anthropic-direct (requires ANTHROPIC_API_KEY repo secret).
-gh variable set AGENTIC_REVIEW_BACKEND --repo $OWNER/$REPO --body anthropic
-gh secret   set ANTHROPIC_API_KEY      --repo $OWNER/$REPO
-
-# Disable entirely.
-gh variable delete AGENTIC_REVIEW_ENABLED --repo $OWNER/$REPO
-```
+If you have v1 repos in flight, leave them on v1. v2 is for new pilots.
 
 ## Origin
 
-This template is distilled from operating practice on [`jk-nd/go-mcp-gw`](https://github.com/jk-nd/go-mcp-gw). The agentic-review binary is ported verbatim (with paths generalised). The trust-boundary workflow's logic is identical; only the watched paths and citations are placeholdered. The issue-template archetypes mirror the issue bodies that worked best in practice for an orchestrator-driven workflow.
-
-The mental model is opinionated: GitHub-issue-driven, draft-PR-first, never-merge-from-an-agent, always-rebase-onto-main, always-respect-the-trust-boundary. Read [`AGENTS.md`](AGENTS.md) for the full operating contract.
+This template is distilled from operating practice on [`jk-nd/go-mcp-gw`](https://github.com/jk-nd/go-mcp-gw) (v1) and the operating-model refactor of May 2026 that produced v2. The mental model is opinionated: spec-driven, plan-mission-driven, agent-team-driven, human-only-where-the-stakes-justify-it, always-respect-the-trust-boundary.
 
 ## License
 
