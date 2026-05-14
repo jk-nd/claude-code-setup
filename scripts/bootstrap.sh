@@ -1,22 +1,31 @@
 #!/usr/bin/env bash
-# bootstrap.sh (v2) — one-shot, idempotent setup for a repo instantiated
+# bootstrap.sh (v3) — one-shot, idempotent setup for a repo instantiated
 # from claude-code-setup.
 #
 # What it does:
 #   1. Detect owner + name from `gh repo view`.
 #   2. Prompt for the comma-separated WATCHED_PATHS (compliance-sensitive
-#      paths). Suggests the v2 default infrastructure paths
+#      paths). Suggests the v3 default infrastructure paths
 #      (.github/workflows/, go.mod, go.sum, .github/CODEOWNERS) plus any
 #      project-specific compliance paths.
-#   3. Substitute ${OWNER}, ${REPO}, ${WATCHED_PATHS},
-#      ${WATCHED_PATHS_AS_CODEOWNER_LINES} placeholders across the
-#      always-rename *.template files (ci.yml, CODEOWNERS).
-#   4. Rename always-renamed *.template -> their non-template name.
-#   5. Prompt-rename the opt-in *.template files: dependabot, govulncheck,
-#      nightly, docs-audit, .claude/settings.json.
-#   6. Create labels: compliance-review, doc-stale, coverage-skip.
-#   7. Optionally install the strict-recipe pre-push git hook.
-#   8. Optionally configure branch protection on `main`.
+#   3. Prompt for ceremony_level (foundation | demo | iterate-fast).
+#   4. Substitute ${OWNER}, ${REPO}, ${WATCHED_PATHS},
+#      ${WATCHED_PATHS_AS_CODEOWNER_LINES}, ${REPO}, ${CEREMONY_LEVEL}
+#      placeholders across the always-rename *.template files
+#      (ci.yml, CODEOWNERS) and the new template files.
+#   5. Rename always-renamed *.template -> their non-template name.
+#   6. Prompt-rename the opt-in *.template files: dependabot, govulncheck,
+#      nightly, docs-audit, .claude/settings.json, dependabot-automerge,
+#      dependabot-rebase-stale, main-broken-sentinel, smoke-test playbook,
+#      agent-team-calibration log.
+#   7. Create labels: compliance-review, doc-stale, coverage-skip,
+#      automerge, dependabot:major-review-needed, main-broken,
+#      agentic-review:degraded.
+#   8. Optionally install the strict-recipe pre-push git hook.
+#   9. Optionally configure branch protection on `main` with a
+#      maintainer-identity allowlist (solo-author = merger stays
+#      unblocked; bot/agent identities trigger non-author approval).
+#  10. Optionally enable GitHub merge queue on `main` via gh graphql.
 #
 # Safe to re-run; only re-applies steps whose underlying state changed.
 
@@ -59,6 +68,38 @@ prompt_yn() {
     done
 }
 
+prompt_choice() {
+    # prompt_choice "Prompt" "default" "opt1" "opt2" "opt3"
+    local prompt="$1"
+    local default="$2"
+    shift 2
+    local opts=("$@")
+    local i=1
+    echo "$prompt" >&2
+    for o in "${opts[@]}"; do
+        echo "  $i) $o" >&2
+        i=$((i + 1))
+    done
+    local reply
+    printf "Choice [%s]: " "$default" >&2
+    read -r reply
+    reply="${reply:-$default}"
+    # If reply is a number, map it back to the option text; if it's a
+    # name that matches an option, accept it directly.
+    if [[ "$reply" =~ ^[0-9]+$ ]] && [ "$reply" -ge 1 ] && [ "$reply" -le "${#opts[@]}" ]; then
+        echo "${opts[$((reply - 1))]}"
+        return
+    fi
+    for o in "${opts[@]}"; do
+        if [ "$o" = "$reply" ]; then
+            echo "$o"
+            return
+        fi
+    done
+    # Fall back to default.
+    echo "$default"
+}
+
 require_gh() {
     if ! command -v gh >/dev/null 2>&1; then
         echo "error: gh CLI not found. Install from https://cli.github.com/." >&2
@@ -76,18 +117,20 @@ substitute_placeholders() {
     local repo="$3"
     local watched_paths="$4"
     local codeowner_lines="$5"
+    local ceremony_level="${6:-foundation}"
 
     local tmp
     tmp=$(mktemp)
 
     OWNER="$owner" REPO="$repo" WATCHED_PATHS="$watched_paths" \
         WATCHED_PATHS_AS_CODEOWNER_LINES="$codeowner_lines" \
+        CEREMONY_LEVEL="$ceremony_level" \
         python3 - "$file" "$tmp" <<'PYEOF'
 import os, sys
 src, dst = sys.argv[1], sys.argv[2]
 with open(src, "r", encoding="utf-8") as f:
     body = f.read()
-for k in ("OWNER", "REPO", "WATCHED_PATHS", "WATCHED_PATHS_AS_CODEOWNER_LINES"):
+for k in ("OWNER", "REPO", "WATCHED_PATHS", "WATCHED_PATHS_AS_CODEOWNER_LINES", "CEREMONY_LEVEL"):
     v = os.environ.get(k, "")
     body = body.replace("${" + k + "}", v)
 with open(dst, "w", encoding="utf-8") as f:
@@ -143,9 +186,9 @@ rename_template() {
     mkdir -p "$dst_dir"
 
     cp "$src" "$dst"
-    substitute_placeholders "$dst" "$OWNER" "$REPO" "$WATCHED_PATHS" "$CODEOWNER_LINES"
+    substitute_placeholders "$dst" "$OWNER" "$REPO" "$WATCHED_PATHS" "$CODEOWNER_LINES" "$CEREMONY_LEVEL"
     rm -f "$src"
-    echo "  -> ${dst#${REPO_ROOT}/}"
+    echo "  -> ${dst#"${REPO_ROOT}"/}"
 }
 
 create_label() {
@@ -173,7 +216,7 @@ require_gh
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 cd "$REPO_ROOT"
 
-echo "claude-code-setup bootstrap (v2)"
+echo "claude-code-setup bootstrap (v3)"
 echo "================================"
 echo "Repo root: $REPO_ROOT"
 echo
@@ -199,7 +242,7 @@ echo "WATCHED_PATHS configure both:"
 echo "  - the trust-boundary CI gate (.github/workflows/trust-boundary.yml)"
 echo "  - CODEOWNERS routing (.github/CODEOWNERS)"
 echo
-echo "v2 defaults to include infrastructure paths so the orchestrator cannot"
+echo "v3 defaults to include infrastructure paths so the orchestrator cannot"
 echo "auto-merge changes to workflows, dependencies, or codeowners themselves:"
 echo "  .github/workflows/, go.mod, go.sum, .github/CODEOWNERS"
 echo
@@ -209,6 +252,17 @@ echo
 DEFAULT_WATCHED=".github/workflows/,go.mod,go.sum,.github/CODEOWNERS"
 WATCHED_PATHS=$(prompt_default "Watched paths" "$DEFAULT_WATCHED")
 
+echo
+echo "Repo ceremony level (per AGENTS.md operating clarification #4 / #19):"
+echo "  foundation   — full architect → spec → planner → plan-reviewer loop."
+echo "                 Used for product foundations and compliance-routed work."
+echo "  demo         — approach + spec collapsed; planner optional;"
+echo "                 plan-reviewer optional. Visible-but-not-foundational."
+echo "  iterate-fast — single doc per slice; implementer + adversary +"
+echo "                 doc-keeper only. Demos and quick-iterate sandboxes."
+echo
+CEREMONY_LEVEL=$(prompt_choice "Pick a ceremony level" "foundation" "foundation" "demo" "iterate-fast")
+
 CODEOWNER_LINES=$(build_codeowner_lines "$OWNER" "$WATCHED_PATHS")
 
 echo
@@ -216,9 +270,32 @@ echo "Configuration:"
 echo "  OWNER:           $OWNER"
 echo "  REPO:            $REPO"
 echo "  WATCHED_PATHS:   $WATCHED_PATHS"
+echo "  CEREMONY_LEVEL:  $CEREMONY_LEVEL"
 echo "  CODEOWNER_LINES:"
 echo "$CODEOWNER_LINES" | sed 's/^/    /'
 echo
+
+# -----------------------------------------------------------------
+# Update AGENTS.md ceremony_level field if it's a placeholder.
+# -----------------------------------------------------------------
+
+if [ -f "$REPO_ROOT/AGENTS.md" ]; then
+    if grep -q '^ceremony_level: foundation' "$REPO_ROOT/AGENTS.md"; then
+        # Default already matches; substitute only if non-default chosen.
+        if [ "$CEREMONY_LEVEL" != "foundation" ]; then
+            python3 - "$REPO_ROOT/AGENTS.md" "$CEREMONY_LEVEL" <<'PYEOF'
+import sys, re
+path, level = sys.argv[1], sys.argv[2]
+with open(path, "r", encoding="utf-8") as f:
+    body = f.read()
+body = re.sub(r'^ceremony_level: \w+', f'ceremony_level: {level}', body, count=1, flags=re.MULTILINE)
+with open(path, "w", encoding="utf-8") as f:
+    f.write(body)
+PYEOF
+            echo "AGENTS.md: ceremony_level set to $CEREMONY_LEVEL"
+        fi
+    fi
+fi
 
 # -----------------------------------------------------------------
 # Always-renamed *.template
@@ -266,9 +343,30 @@ if [ -f ".github/workflows/docs-audit.yml.template" ]; then
 fi
 
 # Dependabot — weekly dependency bumps.
+DEPENDABOT_ENABLED="n"
 if [ -f ".github/dependabot.yml.template" ]; then
     if prompt_yn "Enable Dependabot weekly dependency bumps?" "n"; then
         rename_template ".github/dependabot.yml.template" ".github/dependabot.yml"
+        DEPENDABOT_ENABLED="y"
+    else
+        echo "  Skipped."
+    fi
+fi
+
+# Dependabot auto-merge — only meaningful if dependabot is on.
+if [ "$DEPENDABOT_ENABLED" = "y" ] && [ -f ".github/workflows/dependabot-automerge.yml.template" ]; then
+    if prompt_yn "Enable dependabot auto-merge workflow for patch/minor (major routed to human review)?" "y"; then
+        rename_template ".github/workflows/dependabot-automerge.yml.template" ".github/workflows/dependabot-automerge.yml"
+        echo "  Set the DEPENDABOT_AUTOMERGE_ENABLED repo variable to enable: gh variable set DEPENDABOT_AUTOMERGE_ENABLED -b true"
+    else
+        echo "  Skipped."
+    fi
+fi
+
+# Dependabot rebase-stale — only meaningful if dependabot is on.
+if [ "$DEPENDABOT_ENABLED" = "y" ] && [ -f ".github/workflows/dependabot-rebase-stale.yml.template" ]; then
+    if prompt_yn "Enable nightly auto-rebase of stale (CONFLICTING) dependabot PRs?" "y"; then
+        rename_template ".github/workflows/dependabot-rebase-stale.yml.template" ".github/workflows/dependabot-rebase-stale.yml"
     else
         echo "  Skipped."
     fi
@@ -295,14 +393,66 @@ if [ -f ".github/workflows/nightly.yml.template" ]; then
     fi
 fi
 
+# main-broken sentinel — post-merge build sentinel (issue #21).
+if [ -f ".github/workflows/main-broken-sentinel.yml.template" ]; then
+    echo "  main-broken-sentinel.yml runs a quick verify on every push to main"
+    echo "  and files an issue if main is broken. Recommended for projects that"
+    echo "  have NOT enabled GitHub merge queue. Cheap to keep on either way."
+    if prompt_yn "Enable main-broken sentinel workflow?" "y"; then
+        rename_template ".github/workflows/main-broken-sentinel.yml.template" ".github/workflows/main-broken-sentinel.yml"
+    else
+        echo "  Skipped."
+    fi
+fi
+
+# agentic-review degraded label — opt-in for projects with a CI-side LLM review.
+if [ -f ".github/workflows/agentic-review-degraded-label.yml.template" ]; then
+    echo "  agentic-review-degraded-label.yml is for projects that run a CI-side"
+    echo "  LLM review and want to auto-apply the 'agentic-review:degraded'"
+    echo "  label when the review runs in degraded mode (missing API key, quota"
+    echo "  hit). NOT needed if you use v3's default 'adversary' subagent."
+    if prompt_yn "Enable agentic-review degraded-mode label workflow?" "n"; then
+        rename_template ".github/workflows/agentic-review-degraded-label.yml.template" ".github/workflows/agentic-review-degraded-label.yml"
+        echo "  Edit the workflow to point at your CI-side review workflow's name."
+    else
+        echo "  Skipped."
+    fi
+fi
+
+# Smoke-test playbook (issue #20).
+if [ -f "templates/smoke-test-playbook.md.template" ]; then
+    if prompt_yn "Install starter smoke-test playbook (recommended for projects with a UI / SPA / interactive demo)?" "n"; then
+        SMOKE_DEFAULT_PATH="docs/SMOKE_TEST.md"
+        SMOKE_PATH=$(prompt_default "Playbook path" "$SMOKE_DEFAULT_PATH")
+        if [ -f "$SMOKE_PATH" ]; then
+            echo "  $SMOKE_PATH already exists; leaving in place (re-run safe)."
+            rm -f templates/smoke-test-playbook.md.template
+        else
+            rename_template "templates/smoke-test-playbook.md.template" "$SMOKE_PATH"
+        fi
+    else
+        echo "  Skipped. templates/smoke-test-playbook.md.template stays available."
+    fi
+fi
+
+# Agent-team calibration log (issue #20 amendment).
+if [ -f "docs/research/agent-team-calibration.md" ]; then
+    echo "  docs/research/agent-team-calibration.md (calibration drift log) already in tree; no action."
+fi
+
 # -----------------------------------------------------------------
 # Labels
 # -----------------------------------------------------------------
 
 echo
-create_label "compliance-review"  "b60205" "Trust-boundary gate cleared by an authorised compliance reviewer"
-create_label "doc-stale"          "fbca04" "Documentation drift discovered by doc-keeper or per-merge adversary check"
-create_label "coverage-skip"      "ededed" "Bypass per-package coverage gate; expected to be paired with a follow-up baseline-update PR"
+create_label "compliance-review"              "b60205" "Trust-boundary gate cleared by an authorised compliance reviewer"
+create_label "doc-stale"                      "fbca04" "Documentation drift discovered by doc-keeper or per-merge adversary check"
+create_label "coverage-skip"                  "ededed" "Bypass per-package coverage gate; expected to be paired with a follow-up baseline-update PR"
+create_label "automerge"                      "0e8a16" "Dependabot patch/minor PR — auto-merge after CI green"
+create_label "dependabot:major-review-needed" "d93f0b" "Dependabot major bump — human review required"
+create_label "main-broken"                    "b60205" "Post-merge sentinel detected main fails quick verify; merge cascade likely"
+create_label "agentic-review:degraded"        "fbca04" "CI-side agentic review ran in degraded mode (missing key, quota, deadline)"
+create_label "dependencies"                   "0e8a16" "Tracks a cross-repo dependency surfaced by another repo's orchestrator (per AGENTS.md)"
 
 # -----------------------------------------------------------------
 # Pre-push hook (optional)
@@ -320,12 +470,29 @@ else
 fi
 
 # -----------------------------------------------------------------
-# Branch protection (optional)
+# Branch protection (optional) — v3 maintainer-identity allowlist
 # -----------------------------------------------------------------
 
 echo
 if prompt_yn "Configure initial branch protection on 'main'?" "n"; then
+    echo
+    echo "v3 branch protection uses a maintainer-identity allowlist so the solo-"
+    echo "maintainer human-author = merger case stays unblocked, while bot/agent"
+    echo "identities trigger the non-author-approval requirement. The allowlist"
+    echo "is a comma-separated list of GitHub usernames."
+    echo
+    DEFAULT_BOT_ALLOWLIST="dependabot[bot],cursor[bot],github-actions[bot]"
+    BOT_ALLOWLIST=$(prompt_default "Bot/agent identity allowlist" "$DEFAULT_BOT_ALLOWLIST")
+
     echo "Creating branch protection on main..."
+    # The native branches-protection API does not support author-identity
+    # conditional approval directly; that's a Rulesets capability. The
+    # protection rule we apply here is a sensible default — required
+    # checks + 1 approval + linear history. To get the conditional
+    # author-identity behaviour, apply a Repository Ruleset via the
+    # GitHub UI (Settings → Rules → Rulesets → New ruleset → "Restrict
+    # contributors") and reference the allowlist there. See
+    # docs/setup.md §Branch protection.
     BP_PAYLOAD=$(cat <<JSON
 {
   "required_status_checks": {
@@ -338,6 +505,7 @@ if prompt_yn "Configure initial branch protection on 'main'?" "n"; then
     "dismiss_stale_reviews": true,
     "require_code_owner_reviews": true
   },
+  "required_linear_history": true,
   "restrictions": null
 }
 JSON
@@ -346,12 +514,48 @@ JSON
         "/repos/$OWNER/$REPO/branches/main/protection" \
         --input - >/dev/null 2>&1; then
         echo "  ok"
+        echo "  bot/agent allowlist saved as a documentation reference; configure"
+        echo "  the conditional approval rule via Settings → Rules → Rulesets,"
+        echo "  using this list: $BOT_ALLOWLIST"
+        echo "  See docs/setup.md §Branch protection for the ruleset shape."
     else
         echo "  error: could not apply branch protection. Apply manually via" >&2
         echo "  GitHub Settings → Branches, or re-run with appropriate gh auth scopes." >&2
     fi
 else
     echo "Skipped. Configure via GitHub Settings → Branches when ready."
+fi
+
+# -----------------------------------------------------------------
+# GitHub merge queue (optional)
+# -----------------------------------------------------------------
+
+echo
+if prompt_yn "Enable GitHub merge queue on 'main' (recommended for parallel-agent throughput)?" "y"; then
+    # Enable merge queue via REST PUT to branch protection — set the
+    # required_merge_queue settings to defaults. The native REST shape
+    # for merge queue lives under
+    # /repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks
+    # and a separate /required_merge_queue object on the protection.
+    # GitHub's preferred enable path is via the UI ("Require merge queue"
+    # checkbox under branch-protection-rules) — the API equivalent is:
+    #
+    #   gh api -X POST /repos/$OWNER/$REPO/branches/main/required_merge_queue
+    #
+    # We attempt that here and report on the outcome. If branch protection
+    # is not yet configured, the call will fail — and that's fine; the
+    # user can re-run after branch protection is applied.
+    if gh api -X POST "/repos/$OWNER/$REPO/branches/main/required_merge_queue" >/dev/null 2>&1; then
+        echo "  ok — merge queue is enabled on main"
+        echo "  Required checks now run via merge_group: triggers (already in"
+        echo "  the template's ci.yml and trust-boundary.yml). See AGENTS.md"
+        echo "  merge-cascade clarification."
+    else
+        echo "  error: could not enable merge queue via API. Enable manually via" >&2
+        echo "  Settings → Branches → main → Edit → Require merge queue." >&2
+    fi
+else
+    echo "Skipped. Enable later via Settings → Branches → main → Require merge queue."
 fi
 
 # -----------------------------------------------------------------
@@ -365,12 +569,17 @@ Bootstrap complete.
 Next steps:
   1. Set GOOGLE_AI_STUDIO_API_KEY in your shell env (free key at
      https://aistudio.google.com). The plan-reviewer subagent uses it.
-  2. Replace the Go-flavoured CI (.github/workflows/ci.yml) with one for
+  2. (Optional, only if you re-introduce a CI-side LLM review)
+     Set ANTHROPIC_API_KEY as a repo secret with a budget cap on the
+     Anthropic console. v3's default 'adversary' subagent uses the local
+     Claude CLI and does NOT require this; only projects that bring back
+     a CI-side review need it.
+  3. Replace the Go-flavoured CI (.github/workflows/ci.yml) with one for
      your stack. The job-shape and concurrency block carry over.
-  3. Edit .github/CODEOWNERS to reference real team handles once they
+  4. Edit .github/CODEOWNERS to reference real team handles once they
      exist in your org.
-  4. Start the orchestrator: cd <repo> && claude.
-  5. Tell it what to build. Approve at the four gates: approach, spec,
+  5. Start the orchestrator: cd <repo> && claude.
+  6. Tell it what to build. Approve at the four gates: approach, spec,
      plan-mission, compliance-routed PRs.
 
 Re-running this script is safe — it is idempotent.

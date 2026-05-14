@@ -52,8 +52,11 @@
       "Bash(git pull *)",
 
       "Bash(go build *)",
+      "Bash(go build ./...)",
       "Bash(go vet *)",
+      "Bash(go vet ./...)",
       "Bash(go test *)",
+      "Bash(go test ./...)",
       "Bash(go mod tidy)",
       "Bash(go mod download *)",
       "Bash(go mod why *)",
@@ -64,6 +67,11 @@
       "Bash(gofmt -l *)",
       "Bash(gofmt -w *)",
       "Bash(actionlint *)",
+      "Bash(make *)",
+      "Bash(make:*)",
+      "Bash(scripts/second-opinion.py *)",
+      "Bash(./scripts/second-opinion.py *)",
+      "Bash(python3 scripts/second-opinion.py *)",
 
       "Bash(curl -s *)",
       "Bash(curl -sS *)",

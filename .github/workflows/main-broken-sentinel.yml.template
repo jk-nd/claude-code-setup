@@ -1,0 +1,96 @@
+# Post-merge build sentinel.
+#
+# Triggered on every push to `main`. Runs a quick verify (default:
+# `go build ./...`) and, on failure, opens a `main-broken` issue tagged
+# with the offending merge SHA and comments on the PR that introduced
+# it. Catches the merge-cascade collision pattern: two PRs that pass CI
+# individually break `main` when both land sequentially because their
+# changes interact at the AST level even though git's textual merge had
+# no conflict.
+#
+# This is a defense-in-depth backstop for projects that have NOT yet
+# enabled GitHub merge queue (which eliminates this class of bug
+# entirely). When merge queue is on, this sentinel is mostly redundant
+# but still cheap to keep — it catches drift if the queue is ever
+# bypassed by an admin merge.
+#
+# Bootstrap renames this file from `.template` to `.yml` when the
+# operator opts in via `scripts/bootstrap.sh`. Operator must:
+#
+#   1. Replace the `go build ./...` line with the project's
+#      quick-verify command (target: ≤30s).
+#   2. Confirm the `main-broken` label exists (bootstrap creates it).
+#
+# References: claude-code-setup#21; docs/operating.md; AGENTS.md merge
+# policy section on merge-cascade collisions.
+
+name: Main broken sentinel
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: main-broken-sentinel
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        # Replace this `setup-go` step + the verify command below with
+        # your project's toolchain if not Go.
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Quick verify
+        id: verify
+        run: |
+          set -euo pipefail
+          go build ./...
+
+      - name: File main-broken issue + comment on offending PR
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO:    ${{ github.repository }}
+          SHA:     ${{ github.sha }}
+          REF:     ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          # Find the PR (if any) associated with this merge SHA.
+          pr_number=$(gh pr list --repo "$REPO" --search "$SHA" --state merged --json number --jq '.[0].number // empty' || true)
+          body=$(cat <<EOF
+          \`main\` failed quick verify after commit \`$SHA\`. The
+          merge-cascade collision pattern is likely: this merge and a
+          recently-landed sibling PR may have interacted at the AST
+          level despite a clean three-way text merge.
+
+          Recommended action:
+
+          1. Stop merging until a hot-fix PR lands.
+          2. \`git fetch origin main && git log -1\` to find the offending merge.
+          3. Open a one-line hot-fix PR; merge it once green.
+          4. Resume normal merge cadence.
+
+          Structural fix: enable GitHub merge queue (see \`docs/setup.md\`).
+          EOF
+          )
+          gh issue create \
+            --repo "$REPO" \
+            --title "main broken after ${SHA:0:7}" \
+            --label main-broken \
+            --body "$body"
+          if [ -n "$pr_number" ]; then
+            gh pr comment "$pr_number" --repo "$REPO" --body "Quick-verify on \`main\` failed after this PR merged (\`${SHA:0:7}\`). See the \`main-broken\` issue just filed; please open a hot-fix PR."
+          fi

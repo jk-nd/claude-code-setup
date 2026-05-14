@@ -1,0 +1,77 @@
+# Agentic-review degraded-mode label workflow.
+#
+# v2 of `claude-code-setup` removed the CI-side `cmd/agentic-review/`
+# binary in favour of the pre-PR `adversary` subagent. This template is
+# for projects that opt back into a CI-side LLM review and need to
+# surface "the review was degraded" loudly rather than silently
+# allowing auto-merge.
+#
+# Bootstrap renames this file from `.template` to `.yml` only when the
+# operator explicitly opts in (it is NOT a v3 default).
+#
+# Wiring (project-specific):
+#
+#   1. Replace `<your-review-job>` below with the workflow + job name
+#      of your CI-side LLM review.
+#   2. Add `if: failure() || steps.<your-step>.outputs.degraded == 'true'`
+#      branches at the relevant points in your review workflow that
+#      detect "degraded mode" (missing API key, quota hit, deadline).
+#   3. Configure branch protection (optional) to treat the
+#      `agentic-review:degraded` label as a required-absent label.
+#
+# The `agentic-review:degraded` label is auto-applied when the review
+# workflow finishes in degraded mode, and auto-removed on a successful
+# non-degraded re-run. This avoids the failure mode where a missing API
+# key produced a silent "review passed" with no signal.
+#
+# For projects using v3's default `adversary` subagent (no CI-side
+# review), this template is unnecessary — `adversary` runs locally on
+# the orchestrator's Claude session and does not have a CI-side
+# degraded mode.
+#
+# References: claude-code-setup#10; docs/agentic-review.md.
+
+name: Agentic-review degraded-mode label
+
+on:
+  workflow_run:
+    workflows: ["<your-review-job>"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.event == 'pull_request'
+    steps:
+      - name: Apply or remove degraded-mode label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          # Pull the PR number from the upstream workflow_run's head_branch
+          # via the GitHub API. The upstream workflow_run event carries
+          # `pull_requests[]` only for same-repo PRs; cross-fork PRs need
+          # the head_sha → PR lookup.
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+          pr_number=$(gh pr list --repo "$REPO" --search "$HEAD_SHA" --state open --json number --jq '.[0].number // empty' || true)
+          if [ -z "$pr_number" ]; then
+            echo "No open PR for $HEAD_SHA — skipping."
+            exit 0
+          fi
+          if [ "$CONCLUSION" = "success" ]; then
+            # Successful non-degraded run — remove the label if present.
+            gh pr edit "$pr_number" --repo "$REPO" --remove-label "agentic-review:degraded" || true
+            exit 0
+          fi
+          # Any non-success outcome of the upstream review job is treated
+          # as degraded mode for labelling purposes. Refine the heuristic
+          # to your project's actual degraded-mode signal by parsing the
+          # upstream workflow_run's logs / outputs as needed.
+          gh pr edit "$pr_number" --repo "$REPO" --add-label "agentic-review:degraded"

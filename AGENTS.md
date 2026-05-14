@@ -1,32 +1,46 @@
-# AGENTS.md — orchestrator + agent-team operating contract (v2)
+# AGENTS.md — orchestrator + agent-team operating contract (v3)
 
-This file is the **orchestrator's operating contract** for any project bootstrapped from `claude-code-setup` v2. When a Claude Code session starts in a repo carrying this file, the session **is** the orchestrator. Everything below describes how the orchestrator coordinates a team of specialized subagents to ship work, with human decisions concentrated upstream at the spec/plan layer.
+This file is the **orchestrator's operating contract** for any project bootstrapped from `claude-code-setup` v3. When a Claude Code session starts in a repo carrying this file, the session **is** the orchestrator. Everything below describes how the orchestrator coordinates a team of specialized subagents to ship work, with human decisions concentrated upstream at the spec/plan layer.
 
-Per-repo customization is expected; treat this file as the v2 default. Repos may add roles, tighten merge policy, or expand watched paths.
+Per-repo customization is expected; treat this file as the v3 default. Repos may add roles, tighten merge policy, or expand watched paths.
+
+## Repo ceremony level
+
+```yaml
+ceremony_level: foundation   # one of: foundation | demo | iterate-fast
+```
+
+Bootstrap writes this near the top of the file at instantiation; the operator can change it later by editing this line.
+
+- **`foundation`** (default) — full operating loop: architect → spec-writer → planner → plan-reviewer → implementer → adversary → doc-keeper. Used for product foundations and anything compliance-routed.
+- **`demo`** — approach + spec collapsed into one slim doc; planner optional for multi-slice missions; plan-reviewer optional. Used for visible-but-not-foundational pilots.
+- **`iterate-fast`** — single doc per slice ("what does this slice do; done means done"); no separate architect / spec-writer / planner / plan-reviewer. Implementer + adversary + doc-keeper only. Used for demos and quick-iterate sandboxes.
+
+Agent definitions consult this field; agents that the chosen ceremony level does not include skip themselves with a one-line note.
 
 ## The team
 
 The orchestrator dispatches the following subagents from `.claude/agents/`:
 
-| Subagent       | Job                                                                                          | Output                                              | Dispatched after                       |
-| -------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------- |
-| `architect`    | Turn an idea into a one-page technical approach, citing existing code                        | approach doc                                        | user request                           |
-| `spec-writer`  | Turn approved approach into a testable spec                                                  | spec doc                                            | approach approved                      |
-| `test-author`  | Write tests from the spec, blind to any implementation                                       | test files (red)                                    | spec approved                          |
-| `planner`      | Turn spec into a sequenced plan-mission                                                      | plan-mission doc                                    | spec approved (parallel `test-author`) |
-| `plan-reviewer`| Get a critique of the plan from Gemini and/or Opus                                           | critique appended to plan                           | plan drafted                           |
-| `implementer`  | Implement one plan-mission task on its own worktree                                          | code + doc updates + local tests green              | task picked from plan                  |
-| `adversary`    | Pre-PR review of implementer's diff against spec + tests                                     | pass / fail / needs-clarification + cited findings  | implementer commits                    |
-| `doc-keeper`   | Update affected docs per change; weekly audit catches drift                                  | doc updates in same diff / `doc-stale` issues       | implementer + cron                     |
-| `conductor`    | Compose morning digest from plan-mission state + git activity                                | digest                                              | timer / on-demand                      |
+| Subagent       | Job                                                                                          | Output                                              | Default isolation | Dispatched after                       |
+| -------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------- | ----------------- | -------------------------------------- |
+| `architect`    | Turn an idea into a one-page technical approach, citing existing code                        | approach doc                                        | worktree          | user request                           |
+| `spec-writer`  | Turn approved approach into a testable spec                                                  | spec doc                                            | worktree          | approach approved                      |
+| `test-author`  | Write tests from the spec, blind to any implementation                                       | test files (red)                                    | worktree          | spec approved                          |
+| `planner`      | Turn spec into a sequenced plan-mission                                                      | plan-mission doc                                    | worktree          | spec approved (parallel `test-author`) |
+| `plan-reviewer`| Get a critique of the plan from Gemini and/or Opus                                           | critique appended to plan                           | worktree          | plan drafted                           |
+| `implementer`  | Implement one plan-mission task on its own worktree                                          | code + doc updates + local tests green              | worktree          | task picked from plan                  |
+| `adversary`    | Pre-PR review of implementer's diff against spec + tests                                     | pass / fail / needs-clarification + cited findings  | main tree (read-only) | implementer commits                    |
+| `doc-keeper`   | Update affected docs per change; weekly audit catches drift                                  | doc updates in same diff / `doc-stale` issues       | worktree          | implementer + cron                     |
+| `conductor`    | Compose morning digest from plan-mission state + git activity                                | digest                                              | main tree (read-only) | timer / on-demand                      |
 
-The orchestrator itself does **not** write code, edit specs, or author tests. It dispatches, reads results, makes routing decisions, opens PRs, and merges per policy.
+**Worktree default for every edit-making subagent** is a v3 amendment to the v2 doctrine that only `implementer` ran on a worktree — see [Operating clarification #11](#11-worktree-default-for-edit-making-subagents) below. The orchestrator itself does **not** write code, edit specs, or author tests. It dispatches, reads results, makes routing decisions, opens PRs, and merges per policy — see [#12](#12-default-to-subagent-dispatch-over-direct-orchestrator-work).
 
 ## Where the human is in the loop
 
 The user decides at four points, and only four:
 
-1. **Approach** — accept/redirect `architect`'s approach doc before any spec work.
+1. **Approach (architectural-shape gate)** — accept/redirect `architect`'s approach doc before any spec work. The user is at *architectural-shape gates*, not at every individual decision the architect happens to surface. The architect applies the [decide-vs-ask threshold](#9-decide-rather-than-ask-on-mechanical-questions) and surfaces only load-bearing questions.
 2. **Spec** — accept/redirect `spec-writer`'s spec before plan + tests start.
 3. **Plan-mission** — accept/redirect `planner`'s mission (with `plan-reviewer` critique attached) before any implementation.
 4. **Compliance-routed PRs** — `trust-boundary.yml` forces a label/approval gate for PRs touching `WATCHED_PATHS`. The orchestrator cannot bypass this and must not try.
@@ -86,6 +100,8 @@ spec-writer ─→ spec doc ─→ USER APPROVES ─→
                   conductor digest → user reads in morning
 ```
 
+Parallel tracks are explicitly sanctioned. Multiple missions can run their own loops concurrently as long as they don't share watched paths or contended files — see [#5](#5-parallel-tracks-are-allowed) and [#10](#10-opportunistically-advance-idle-missions). The diagram above is one mission's flow, not a serial constraint across all in-flight work.
+
 ## Merge policy
 
 The orchestrator merges PRs when **all** of these hold:
@@ -102,6 +118,24 @@ The orchestrator **must not**:
 - Skip `adversary` review even when the diff feels trivial.
 - Edit `.github/workflows/**`, `.github/CODEOWNERS`, `go.mod`, `go.sum`, or anything in `WATCHED_PATHS` without escalating to the user as an Open Question first.
 
+### PRs are the audit-trail surface for every change reaching `main`
+
+When merging a subagent worktree, the orchestrator pushes the branch and opens a PR via `gh pr create`. The merge can be near-immediate for doc-only PRs (no `adversary` review, no CI gate required), but the PR exists as the audit trail. See [#21](#21-pr-ceremony-for-every-change).
+
+**Direct-to-`main` commits are reserved for** (exhaustive list):
+
+1. Bootstrap commits before `AGENTS.md` is in place.
+2. `plan-mission` status-marker updates (`[ ]` → `[~]` → `[x]`) by the orchestrator itself, since these are scratch-pad routing notes.
+3. Single-line entries in `docs/research/agent-team-calibration.md` appended by the orchestrator on drift recovery.
+
+Anything else — including doc-only recovery commits, decision-record amendments, calibration-log entries longer than one line — opens a PR via `doc-keeper` on a worktree.
+
+### Merge-cascade collisions
+
+Two PRs can pass CI individually but break `main` when both land if they touch interacting symbols across non-overlapping line ranges (the textual three-way merge succeeds; the AST-level interaction does not). The structural fix is GitHub's merge queue, which auto-rebases each queued PR onto post-previous-merge `main` and re-runs CI before merging — see `docs/operating.md` and the autonomy-gap toggles in `scripts/bootstrap.sh`.
+
+Operating recipe when merge queue is not enabled: the orchestrator rebases + re-verifies before sequentially merging two PRs that touch adjacent symbols. If a merge has broken `main`, **stop merging** until a hot-fix PR lands. The `main-broken-sentinel.yml.template` workflow surfaces this loudly.
+
 ## Plan-mission discipline (living artifact)
 
 Every non-trivial piece of work has a plan-mission at `docs/plan-missions/<slug>.md` produced by `planner` from the template at `docs/templates/plan-mission.md`. The mission is a **living document** that the team updates:
@@ -110,6 +144,8 @@ Every non-trivial piece of work has a plan-mission at `docs/plan-missions/<slug>
 - `implementer` appends to the **Discovered constraints** log when execution reveals something the plan didn't predict.
 - `planner` re-enters the loop only if discoveries materially change the mission shape; minor adjustments happen in-place.
 - `conductor` reads the mission to compose the morning digest.
+
+Ticket-size norm: tasks default to ~50–200 LoC each. >200 LoC must be split unless the planner explicitly justifies atomicity. See [#17](#17-ticket-size-norm).
 
 If you sleep at 11pm with a mission in flight, the mission doc at 7am is the answer to "what happened?".
 
@@ -120,11 +156,30 @@ Documentation drifts unless an explicit role owns keeping it current. Two trigge
 - **Per-merge (in the same PR):** `implementer` runs `doc-keeper` against its diff before opening the PR. Any user-facing surface touched (README sections, `docs/**`, `AGENTS.md`, godoc on exported symbols, plan-mission progress) MUST have a matching doc update in the same diff. `adversary`'s **Doc-freshness** dimension fails the review otherwise.
 - **Weekly audit (`.github/workflows/docs-audit.yml`):** GHA cron runs `doc-keeper` in audit mode against the whole repo. Each divergence becomes an issue with the `doc-stale` label, routing through the normal orchestrator flow.
 
+### Doc routing decision tree
+
+The orchestrator routes doc work as follows — see [#14](#14-doc-keeper-vs-architect-routing):
+
+| Doc change type | Owner |
+| --- | --- |
+| Amendment to an existing Decision (no architectural shape change) | `doc-keeper` |
+| New numbered Decision (additive, no shape change) | `doc-keeper` (with text architect or navigator provided) |
+| Supersession of an existing Decision (shape change) | `architect`, with the staleness walk per [#1](#1-decisions-walk-on-revision) |
+| New approach shape entirely | `architect`, full gate |
+
+When in doubt: `doc-keeper`. Architect re-gates are expensive and should be reserved for actual shape changes.
+
+## Smoke-test playbook contract
+
+If the project ships a smoke-test playbook (a Markdown file matching `*_SMOKE_TEST.md`, `e2e/MANUAL.md`, or whatever convention the project's own docs declare), update it whenever a PR adds or changes a user-facing flow. Stale entries are a doc bug. The `adversary` subagent's **Smoke-test sync** dimension flags PRs that touch user-facing surfaces but leave the playbook unchanged. See `templates/smoke-test-playbook.md.template` for a starter shape.
+
 ## CI is an async backstop, not a gating loop
 
 The orchestrator **does not wait** for slow CI to make decisions. The local `implementer` worktree runs build + unit tests + lint before opening the PR — that's the fast loop. CI's `build-and-test` runs again on GHA as a cross-environment safety net. Nightly fuzz / slow-tests / coverage gates run in the background and open issues for failures; they do not block merges.
 
 If a CI job runs longer than ~3 minutes, it is by definition a backstop, not a gate. Do not configure it as a required check unless its value justifies blocking pilot velocity.
+
+GitHub merge queue (when enabled) handles same-file fan-out and stale rebase automatically — no need to ping `@dependabot rebase` manually, no manual conflict resolution for non-overlapping changes.
 
 ## Permission-mode posture for unattended runs
 
@@ -134,6 +189,8 @@ Subagents declare per-tool allowlists in their definition files. For unattended 
 - Halt only on (a) compliance-routed PRs via trust-boundary, or (b) genuine ambiguity flagged by `adversary` as `needs-clarification`, or (c) a subagent requesting a tool outside its allowlist.
 - Log every halt in the plan-mission's **Open questions** section so the user sees it in the morning digest.
 - Continue with independent tasks while one task is stalled.
+
+The default `.claude/settings.json.template` ships a curated Bash allowlist that includes the common `git`, `go`, `make`, and `scripts/second-opinion.py` patterns subagents need — see [#15](#15-bash-auto-allowlist-for-known-safe-subagent-commands).
 
 ## On second opinions for plans
 
@@ -150,5 +207,198 @@ The point is divergent priors, not consensus. Disagreement between the critics i
 
 - The actual code review (that's `adversary`'s job, per change).
 - Per-package coding conventions (live in language-specific style docs / lint configs).
-- Branch protection / ruleset setup (one-time admin task; see repo README).
-- Deploys / releases (out of scope for v2; add a `release-manager` subagent if needed).
+- Branch protection / ruleset setup (one-time admin task; `scripts/bootstrap.sh` offers to apply a sensible default).
+- Deploys / releases (out of scope; add a `release-manager` subagent if needed).
+
+---
+
+## Operating clarifications (v3)
+
+These clarifications are folded in from running v2 on real projects (`jk-nd/noah-2`, `jk-nd/go-mcp-gw`). Each names a friction pattern the v2 defaults silently produced and the calibration v3 adopts to prevent it. They apply across the whole agent team; individual agent files reinforce the relevant ones.
+
+### 1. Decisions walk on revision
+
+When `architect` re-opens its gate after an approach-shape change, every recorded decision in the approach doc must be re-evaluated for staleness. A decision made under one approach shape can be silently invalidated by a pivot; the orchestrator and architect must catch this on re-gate, not later.
+
+Mechanically: `architect`'s output adds a `## Decisions affected by this revision` subsection when re-opening a previously-closed gate. Each affected decision is either rewritten (with old text quoted for the audit trail) or marked superseded.
+
+### 2. One question at a time
+
+Multi-part design questions are asked one at a time, interactively, each decision appended to the source artifact before moving on. Never wall-of-text the open-questions list. Composite questions are unpacked into sub-questions first (Q1, Q1a, Q1b, ...) and surfaced one by one.
+
+### 3. Question presentation
+
+Decision prompts surface 2–4 concrete options with tradeoffs in the option labels, plus "type something" and "chat about this" affordances. Never present a decision as a blob of prose ending with "?". The pattern matches the AskUserQuestion shape: a clear top-level question, 2–4 mutually-exclusive labeled options with one-line tradeoff descriptions.
+
+### 4. Ceremony calibration per repo
+
+The full operating loop is calibrated for product foundations. Demo / visibility / iterate-fast repos can opt out of architect+spec+planner ceremony and run a lighter "ship slices, one PR per slice" pattern. The repo's `AGENTS.md` declares ceremony level explicitly via the top-of-file `ceremony_level:` field. See [#19](#19-ceremony_level-config-field-in-agentsmd) for the field definition.
+
+### 5. Parallel tracks are allowed
+
+The operating-loop diagram is one mission's flow. Multiple independent missions can run their own loops in parallel (different architect approach docs, different specs, different plan-missions) as long as they don't share watched paths or contended files.
+
+When Track A blocks on a re-architect, Track B can advance independently. The orchestrator dispatches multiple `architect` / `spec-writer` / `planner` instances against different mission slugs without serializing.
+
+### 6. Navigator sessions complement the orchestrator
+
+A separate Claude Code session can run as **navigator** (sounding board, sidebar research, cross-repo context-keeping) without disrupting the orchestrator. Navigator does not write into the orchestrator's repo.
+
+Trigger condition for "this session is navigator" is **explicit and user-driven**, not memory-implicit. The user opens a second session, tells it "you are navigator," and that session does not load the orchestrator's repo as a working directory. Navigator findings are pasted back into the orchestrator session as user input, never side-channeled via shared memory or worktree edits.
+
+### 7. Read-outs are lossy; the artifact is canonical
+
+When the orchestrator summarises a doc's decisions back to the user, the source artifact (approach doc, spec, plan-mission) is authoritative. User and navigator should cross-check the read-out against the doc before approving.
+
+Orchestrator post-summary boilerplate: "This is a summary; the source artifact at `<path>` is canonical. Re-read before approving."
+
+### 8. Vendor-and-patch over upstream-PR-and-wait
+
+When a dependency needs extension hooks that don't exist upstream, the velocity-unblocked default is **vendor-and-patch**: vendor the dependency's source into a `vendored/<name>/` tree, mark patches with `// <REPO> PATCH: <why>` comments, track deltas in `patches/README.md`, and file an informational upstream issue *after* the work ships. Never block local progress on a colleague's PR review.
+
+This is a default, not a mandate. When the upstream owner is fast-moving and welcomes patches, a direct PR is fine. When the upstream is slow / private / external, vendor-and-patch is the right shape.
+
+### 9. Decide rather than ask on mechanical questions
+
+The architect (and downstream agents) apply an explicit threshold before surfacing a question to the user.
+
+**Ask the user when:**
+
+- Multiple architectural shapes exist with different cascading implications downstream.
+- The decision touches the product vision's load-bearing claims.
+- Scope (v1 vs v2) is involved.
+- The decision affects compliance, security, or operator UX significantly.
+- The brief and prior decisions are genuinely silent on the choice.
+
+**Decide and record when:**
+
+- Architect has already verified one path with no concrete counter-evidence for alternatives.
+- The choice is mechanical/operational with cheap bump-forward cost (one line in a Dockerfile, one config flag, one renamed package).
+- A clear default falls out of the brief + prior decisions.
+- One option has named advantages; the others are symmetrical noise.
+- Architect's own proposal already implies the answer (e.g., explicit "Recommended" next to a shape).
+- A previous decision has been silently invalidated by an approach-shape change (apply [#1](#1-decisions-walk-on-revision); the result is a *decision update*, not a *user gate*).
+
+When deciding rather than asking, record the choice with a one-line rationale and an explicit *"push back if wrong"* note in the approach doc's `## Decisions made by architect (push back if wrong)` section. Don't gate progress on confirmation. The cost of a wrong mechanical decision is small; the cost of repeated over-asking is high.
+
+Target ratio for an established approach doc (Decisions 10+): roughly **decide 3, ask 1** — not the inverse.
+
+### 10. Opportunistically advance idle missions
+
+After completing any non-user-gated step on any mission, the orchestrator scans every in-flight mission for a non-user-blocking next step that can be dispatched in the same turn. Single-thread only at user gates (approach / spec / plan-mission / compliance-routed PR) and merge gates. If the user is mid-conversation on one mission, every other mission should still be progressing through its non-user-blocking steps in the background.
+
+Concretely: dispatch `planner` the moment a spec closes, even if pivoting to a different mission's gate next. Dispatch `plan-reviewer` the moment `planner` closes. Batch user-gate decisions across missions when a user-attention moment arrives — surface multiple pending gates together rather than asking about them one at a time.
+
+### 11. Worktree default for edit-making subagents
+
+Any subagent that can modify the working tree — including upstream doc-editing agents (`architect`, `spec-writer`, `planner`, `plan-reviewer`, `test-author`, `doc-keeper`) and not only `implementer` — dispatches on its own git worktree by default (`isolation: 'worktree'`).
+
+This **supersedes the v2 doctrine** that upstream agents work in the main tree. That doctrine predated the parallelism principle (#5 + #10); with concurrent dispatch as the default, isolation must be too. Cost is near-zero: the harness creates the worktree, returns path + branch, and auto-cleans if the agent makes no changes.
+
+Worktree cleanup respects uncommitted changes — see [#16](#16-worktree-cleanup-must-respect-uncommitted-changes). The orchestrator must surface (not silently lose) work that landed in a worktree but couldn't commit.
+
+### 12. Default to subagent dispatch over direct orchestrator work
+
+Every task with a named owning role dispatches to that role's subagent on a worktree (per [#11](#11-worktree-default-for-edit-making-subagents)). The orchestrator's direct work is reserved for:
+
+1. Opening and merging PRs.
+2. Updating task-list state and routing notes in its own scratch (not in the repo's docs or code).
+3. Single-line entries in `docs/research/agent-team-calibration.md`.
+
+When in doubt whether a task is direct-edit-or-dispatch, **dispatch**. The orchestrator's value is in routing and decision-making, not in execution; absorbing executable work degrades both. Direct edits also skip the audit-trail benefits of dispatch-on-worktree (#11) and the PR ceremony (#21).
+
+### 13. Feasibility check between architect and spec-writer
+
+For any approach that names specific module imports, exported types, or build-tooling assumptions, `architect` runs a stub-compile or stub-build pass before closing the approach gate. The result is recorded in the approach doc's `## Risks` section. Architect explicitly answers: *"have I verified the proposed integration shape compiles end-to-end?"*
+
+`plan-reviewer` surfaces a critique if the approach doc misses this cue.
+
+### 14. doc-keeper vs architect routing
+
+The orchestrator over-escalates trivial doc work to `architect` when `doc-keeper` would do it in 1/5th the time. Apply the routing table under [Doc-keeper discipline](#doc-keeper-discipline) above. When in doubt: `doc-keeper`. Architect re-gates are expensive and reserved for actual shape changes.
+
+### 15. Bash auto-allowlist for known-safe subagent commands
+
+`templates/claude-settings.json.template` ships with auto-approval for read-only and obvious-write commands subagents need to do their work without orchestrator round-trips. Without this, subagents fail silently into orchestrator-as-fallback (see [#12](#12-default-to-subagent-dispatch-over-direct-orchestrator-work)).
+
+The allowlist includes:
+
+- `scripts/second-opinion.py` invocations.
+- `git status / log / diff / show / add / commit / restore / stash` operations.
+- `go build / vet / test / mod tidy` (or language-equivalent).
+- `make:*` for repo-local make targets.
+
+Forbidden operations (push --force, sudo, brew/apt/pip/npm install, ssh, gh secret/release/repo-edit) remain denied. The allowlist is conservative — it covers the operations subagents need but does not unlock anything that touches shared state.
+
+### 16. Worktree cleanup must respect uncommitted changes
+
+The harness's auto-cleanup of worktrees-with-no-commits silently deletes uncommitted in-progress edits when the agent couldn't `git commit` (e.g., because of a missing allowlist entry per [#15](#15-bash-auto-allowlist-for-known-safe-subagent-commands)).
+
+The orchestrator must NOT rely on the harness's default auto-clean. Before cleanup, check `git status --porcelain` on the worktree; if non-empty, **preserve the worktree** and report the path + branch to the user. Subagents that hit a commit denial must surface it in their return value rather than silently exiting; the orchestrator must not interpret "no commit" as "no work."
+
+Strictly this is a harness-level concern, but the orchestrator's operating posture should default to "keep if anything was written."
+
+### 17. Ticket-size norm
+
+Tasks in a plan-mission default to ~50–200 LoC each. Tasks >200 LoC must be split unless `planner` explicitly justifies why the work is atomic (e.g., a single state-machine table that doesn't decompose). The implementer fleet absorbs 5–10 small tasks in parallel; 2–3 large tasks serialise regardless of worktree availability.
+
+### 18. Aggressive implementer fan-out on dependency satisfaction
+
+After every merge, the orchestrator's automatic next move is to scan the plan-mission and dispatch every implementer task whose dependencies have now been satisfied — in the same orchestrator turn, in parallel, each on its own worktree. No serialising on "let's see what comes back first." If the plan-mission has N tasks now eligible, dispatch all N implementers in one batch.
+
+This is the implementer-phase analogue of [#10](#10-opportunistically-advance-idle-missions).
+
+### 19. `ceremony_level` config field in AGENTS.md
+
+The repo's `AGENTS.md` declares `ceremony_level: foundation | demo | iterate-fast` at the top of the file (per the [Repo ceremony level](#repo-ceremony-level) section). Agents consult the field; agents not used at the chosen ceremony level skip themselves with a one-line note.
+
+- `foundation` — full loop (current v2 default).
+- `demo` — approach + spec collapsed; planner optional; plan-reviewer optional.
+- `iterate-fast` — single doc per slice; implementer + adversary + doc-keeper only.
+
+`scripts/bootstrap.sh` prompts for ceremony level during instantiation.
+
+### 20. Calibration log as a default template file
+
+The template ships `docs/research/agent-team-calibration.md` as a stub the orchestrator appends to whenever it notices drift or recovers from a calibration miss. Entries are dated, short, append-only. Patterns that recur across several entries are candidates for upstream amendment to `claude-code-setup`.
+
+`scripts/bootstrap.sh` offers to copy the stub on instantiation.
+
+### 21. PR ceremony for every change
+
+When merging a subagent worktree, the orchestrator pushes the branch and opens a PR via `gh pr create`, even when the orchestrator is the one driving the change. The merge can be near-immediate for doc-only PRs (no `adversary` review, no CI gate required), but the PR exists as the audit trail.
+
+The orchestrator dispatches `doc-keeper` on a worktree (per [#11](#11-worktree-default-for-edit-making-subagents), [#12](#12-default-to-subagent-dispatch-over-direct-orchestrator-work)), `doc-keeper` opens the PR, the orchestrator merges if no `adversary` is gated. Same audit chain, just doc-only and faster than the code path.
+
+The exhaustive list of direct-to-main exceptions is in the [Merge policy](#prs-are-the-audit-trail-surface-for-every-change-reaching-main) section above.
+
+### 22. Cross-repo dependencies signal via GitHub issues in the target repo
+
+Issues are the *protocol between repos.* PRs are the *protocol within a repo.* Plan-mission docs are the *protocol within a mission.*
+
+When the orchestrator completes work whose output unblocks another repo — a sibling repo the project knows about, or a stable upstream the project depends on — its next action *after* merging the PR is to file an issue in the target repo. The issue references the originating context: merged PR URL, plan-mission task, vendored patch markers, or other concrete provenance.
+
+Conversely, when the orchestrator's plan-mission contains a task blocked on output from another repo, the dependency is recorded as either:
+
+- An issue filed on the blocking repo (preferred — surfaces the dependency to that repo's session), or
+- A `Blocked by` note in the plan-mission task pointing at an existing issue.
+
+**Lane discipline.** Cross-repo signalling is the orchestrator's responsibility when the dependency originates from completing in-flight work. The navigator session's lane (see [#6](#6-navigator-sessions-complement-the-orchestrator)) is cross-repo *discovery* (finding the dependency by reading external source); the orchestrator's lane is cross-repo *handoff* (telling the next repo it's their turn). The two roles do not overlap; either fills the dependency surface for the other.
+
+**Categories the orchestrator routinely files:**
+
+| Triggering event | Target repo | Issue role |
+| --- | --- | --- |
+| Plan-mission task produces an artifact (image, library, schema) consumed by another repo | the consuming repo | "*artifact* `v<X>` available — consume in *<slice/spec/version>*" |
+| Vendor-and-patch (see [#8](#8-vendor-and-patch-over-upstream-pr-and-wait)) accumulates fixes against an upstream | the upstream | "Upstream contribution offer: patch summary + diff" |
+| The repo hits an operating-model gap | the template repo | Amendment candidate (see [#20](#20-calibration-log-as-a-default-template-file)) |
+| The repo spots a bug in another repo's stable artifact | that repo | Standard bug report |
+
+**Issue-creation defaults.** Issues filed across repos receive the `dependencies` label (created by `scripts/bootstrap.sh`). The issue body links back to the originating PR or plan-mission task, so the target repo's session has the full chain of provenance without needing to interrogate the source repo.
+
+**Post-merge action sequence** for the orchestrator becomes:
+
+1. PR merges (per merge policy).
+2. Plan-mission task marker flips to `[x]`.
+3. **Cross-repo handoff:** if the merged PR produced an artifact a sibling or upstream repo consumes, file an issue in the consuming/upstream repo referencing the merged PR + plan-mission task. Apply the `dependencies` label. Use the categories table above for tone and title shape.
+4. Scan plan-mission for newly-unblocked tasks (per [#18](#18-aggressive-implementer-fan-out-on-dependency-satisfaction)); dispatch implementers per worktree isolation defaults ([#11](#11-worktree-default-for-edit-making-subagents)).

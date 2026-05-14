@@ -1,0 +1,59 @@
+# Auto-merge dependabot patch/minor PRs.
+#
+# Triggered on every pull_request from `dependabot[bot]`. Reads the
+# update-type from dependabot's metadata action; if the update is
+# `version-update:semver-patch` or `:semver-minor` AND the
+# `DEPENDABOT_AUTOMERGE_ENABLED` repo variable is set to `true`, the
+# workflow applies the `automerge` label and asks GitHub to auto-merge
+# (squash) when all required checks pass. Major bumps get the
+# `dependabot:major-review-needed` label instead and are left for human
+# review.
+#
+# Bootstrap renames this file from `.template` to `.yml` when the
+# operator opts in via `scripts/bootstrap.sh`. Project must:
+#
+#   1. Create the repo variable: gh variable set DEPENDABOT_AUTOMERGE_ENABLED -b true
+#   2. Create the labels (`automerge`, `dependabot:major-review-needed`)
+#      — bootstrap.sh does this when you opt in.
+#   3. Ensure branch protection allows `dependabot[bot]` to merge, OR
+#      configure a maintainer-identity bypass per the branch-protection
+#      template in `docs/setup.md`.
+#
+# References: AGENTS.md operating clarification on dependabot velocity;
+# observed friction #1 in `claude-code-setup#6`.
+
+name: Dependabot auto-merge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && vars.DEPENDABOT_AUTOMERGE_ENABLED == 'true'
+    steps:
+      - name: Read dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+
+      - name: Label + enable automerge for patch / minor
+        if: steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr edit "$PR_URL" --add-label automerge
+          gh pr merge --auto --squash "$PR_URL"
+
+      - name: Label major as needing human review
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr edit "$PR_URL" --add-label "dependabot:major-review-needed"

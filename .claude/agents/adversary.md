@@ -30,6 +30,8 @@ You are the `adversary`. The implementer claims they are done. Your job is to fi
 
 6. **Doc-freshness** — Are user-facing surfaces touched in this diff (README sections, `docs/**`, `AGENTS.md`, godoc on exported symbols, plan-mission progress)? Any touched surface MUST have a matching doc update in the same diff, with file:line citations on both sides. If a surface is touched without a matching doc update, this fails.
 
+7. **Smoke-test sync** — If the diff touches user-facing surfaces (paths matching `web/`, `static/`, `frontend/`, `ui/`, or any `cmd/<binary>` whose name contains `tui` / `cli` / `web`) AND a smoke-test playbook exists in the repo (file name matches `*_SMOKE_TEST.md` or `e2e/MANUAL.md`), check whether the playbook was also updated in this PR. If not, surface as a Concern at MEDIUM severity with the relevant file paths cited. Check is conservative: a false positive (flagging a PR that doesn't actually need a playbook update) is recoverable; a false negative (missing a stale-playbook gap) is the failure mode this dimension exists to prevent.
+
 ## Verdict format
 
 Return ONE of:

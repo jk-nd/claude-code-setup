@@ -1,0 +1,89 @@
+# UI smoke test — ${REPO}
+
+> Versioned, end-to-end manual for the user-facing surface of this project.
+> Treated as part of the user-facing-surface contract (per
+> [AGENTS.md operating clarification #20](../../AGENTS.md#smoke-test-playbook-contract)),
+> not as separate docs work.
+>
+> **Stale rows are themselves a doc bug.** When a PR adds or changes a
+> user-facing flow, this file must move in the same PR. The `adversary`
+> subagent's **Smoke-test sync** dimension flags PRs that touch
+> user-facing surfaces but leave this file unchanged.
+
+## §0 Preflight
+
+What the operator should have installed / configured / running before
+starting a smoke run. Examples: env vars, local services, test accounts,
+seed data.
+
+- [ ] <step 1>
+- [ ] <step 2>
+
+## §1 <First flow> — happy path + canonical unhappy path
+
+**Goal:** <what success looks like for this flow>
+
+### Happy path
+
+1. <step>
+2. <step>
+3. **Expected:** <observable result>
+
+### Canonical unhappy path
+
+1. <step that causes the documented failure>
+2. **Expected:** <what the user sees>
+
+## §2 <Second flow>
+
+(Repeat the §1 shape. One flow per top-level user goal.)
+
+## §N Offline / make targets / admin spot checks
+
+Steps the operator runs locally without the live system. Useful for fast
+"is everything wired up?" checks before a deeper smoke run.
+
+- `make smoke-offline` — <what it does>
+- ...
+
+## Known rough edges
+
+| ID | Issue | Description |
+| --- | --- | --- |
+| RE1 | #NN | <one-line summary; link to the tracking issue if any> |
+
+## Per-run report template
+
+Copy when running a full smoke session:
+
+```
+# Smoke run — YYYY-MM-DD
+
+Tester: <handle>
+Build: <commit SHA / image tag>
+Environment: <local / staging>
+
+## Results
+
+| §  | Flow | Result | Notes |
+| -- | ---- | ------ | ----- |
+| §1 | <name> | pass / fail | <link to issue if filed> |
+| §2 | <name> | pass / fail | |
+```
+
+## New-issue body template
+
+Copy when filing a new issue from a failed smoke step:
+
+```
+**Discovered in:** smoke run YYYY-MM-DD, §N flow "<name>", step <M>.
+**Build:** <SHA>.
+
+**Steps to reproduce:**
+
+1. ...
+2. ...
+
+**Expected:** <what the smoke playbook said would happen>
+**Actual:** <what happened instead>
+```

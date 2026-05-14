@@ -44,6 +44,12 @@ on:
       - 'PLACEHOLDER_DELETE_ME/**'
   pull_request_review:
     types: [submitted, edited, dismissed]
+  # GitHub merge queue — when this workflow is wired into branch
+  # protection as a required check, the queue re-runs it against the
+  # queued PR rebased onto post-previous-merge `main`. The compliance
+  # gate must clear at queue time as well as at PR time.
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read

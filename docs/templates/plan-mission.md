@@ -24,6 +24,15 @@ Two or three sentences from the approved approach doc. Why this shape, not the a
 
 Tasks in dependency order. Status markers: `[ ]` pending, `[~]` in-progress, `[x]` done, `[d]` deferred, `[?]` blocked-by-question.
 
+**Ticket-size norm: ~50–200 LoC per task.** Tasks projected over 200 LoC must be split unless `planner` explicitly justifies why the work is atomic. See AGENTS.md operating clarification #17. The implementer fleet absorbs 5–10 small tasks in parallel; 2–3 large ones serialise regardless of worktree availability.
+
+### Ready to dispatch now
+
+(Updated by the orchestrator after every merge. Lists tasks whose dependencies are immediately satisfied so the next orchestrator turn can fan out implementers in one batch — per AGENTS.md operating clarification #18.)
+
+- T<N>, T<M>, T<K>: ready when T<dep> merges.
+
+
 - [ ] **T1: <title>** — owner: `implementer`. Spec § *NN*. Blockers: none.
   - Files (expected): `internal/foo/bar.go`, `internal/foo/bar_test.go`
   - Acceptance: `TestProcess_*` in `internal/foo/bar_test.go` pass.
