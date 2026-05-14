@@ -81,6 +81,20 @@ Single-line entries land direct-to-`main`. Multi-line entries (post-mortems, lon
 
 Patterns that recur across several entries are candidates for upstream amendment to `jk-nd/claude-code-setup`.
 
+## Proactive check-ins on long-running background agents
+
+Per AGENTS.md operating clarification #24: at every turn boundary, the orchestrator scans in-flight subagent dispatch timestamps. For any agent past its expected duration (10 min for implementer / test-author; 5 min for adversary / spec-writer / doc-keeper / plan-reviewer), the orchestrator autonomously checks in — either `Read`s the agent's transcript or `SendMessage`s asking for status.
+
+On detecting a stuck agent:
+
+1. Read the transcript / JSONL output to identify the blocking step.
+2. If **Bash denial** (the most common failure mode): widen the allowlist + re-dispatch, OR salvage worktree edits into an orchestrator-merge step, OR re-dispatch with `edit-only-no-git` constraint and commit on the agent's behalf.
+3. If **hung tool call** or **infinite loop**: cancel + re-dispatch with a revised prompt.
+4. If **genuinely just-slow** (large task, legitimate iteration): note the actual duration in the plan-mission so future dispatches calibrate.
+5. **Log to `docs/research/agent-team-calibration.md`** if it represents a new failure mode.
+
+Long silences are signals, not noise. The "set and forget" dispatch model fails when Bash denial is the dominant silent-failure mode.
+
 ## When a subagent's Bash is denied
 
 Per AGENTS.md operating clarifications #15 and #16: if a subagent's allowlisted-but-denied Bash call (e.g., a `git commit` denied because the path pattern doesn't match) causes the agent to return without committing, the orchestrator must:

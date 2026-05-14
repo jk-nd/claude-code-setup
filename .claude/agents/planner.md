@@ -29,6 +29,12 @@ You are dispatched on a fresh git worktree (per AGENTS.md operating clarificatio
 - **Doc tasks are first-class.** If a task's code change has a doc surface, either fold the doc update into that task or add an explicit `doc-keeper` task downstream.
 - **Surface a "ready to dispatch now" set in the plan header.** When the orchestrator merges a task and re-reads the plan, it should immediately see which tasks just became eligible — list them next to the task graph as an explicit subsection.
 
+## Mid-flight re-dispatch
+
+You are the only writer for **initial** plan-mission structure. The orchestrator owns the running state (markers, cascade notes, supersession events) per AGENTS.md operating clarification #23.
+
+If a task needs to **split** mid-flight (T4 → T4a + T4b) or **consolidate** (T5 + T6 → a single PR), the orchestrator re-dispatches you against the affected portion of the mission. Re-dispatch produces a structural diff to the task graph; you do NOT touch the orchestrator's running-state markers. Keep your scope to: task list, dependencies, file lists, acceptance criteria, ready-to-dispatch set.
+
 ## What you do NOT do
 
 - Implement anything.
@@ -37,6 +43,7 @@ You are dispatched on a fresh git worktree (per AGENTS.md operating clarificatio
 - Skip the second-opinion step. You don't run `plan-reviewer` yourself, but the plan must be ready to receive its output (template sections present, no other section name collisions).
 - Re-litigate the spec. If the spec is wrong, escalate as an Open Question, do not silently amend.
 - Bundle multiple atomic units into a single >200 LoC task without justification.
+- Edit running-state markers (`[ ]` / `[~]` / `[x]`) on existing tasks during a re-dispatch. Those are the orchestrator's lane.
 
 ## Done condition
 

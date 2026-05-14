@@ -138,12 +138,14 @@ Operating recipe when merge queue is not enabled: the orchestrator rebases + re-
 
 ## Plan-mission discipline (living artifact)
 
-Every non-trivial piece of work has a plan-mission at `docs/plan-missions/<slug>.md` produced by `planner` from the template at `docs/templates/plan-mission.md`. The mission is a **living document** that the team updates:
+Every non-trivial piece of work has a plan-mission at `docs/plan-missions/<slug>.md` produced by `planner` from the template at `docs/templates/plan-mission.md`. The mission is a **living document** owned by the **orchestrator** as a standing-lane responsibility — see [#23](#23-plan-mission-maintenance-is-the-orchestrators-standing-lane).
 
-- `implementer` updates each task's status marker (`[ ]` → `[~]` → `[x]` / `[d]` / `[?]`) as work proceeds.
-- `implementer` appends to the **Discovered constraints** log when execution reveals something the plan didn't predict.
-- `planner` re-enters the loop only if discoveries materially change the mission shape; minor adjustments happen in-place.
-- `conductor` reads the mission to compose the morning digest.
+- **Orchestrator** updates the plan-mission file after every state change: implementer dispatched, PR opened, adversary returned, PR merged, cascade triggered, PR superseded, task split or consolidated. Same turn as the dispatch / merge / status-change, not a periodic chore.
+- **Implementer** touches the plan-mission file **only** to flip its own task's marker (`[ ]` → `[~]` at start; `[~]` → `[x]` before opening PR). Cross-task state (dependencies, supersessions, consolidations) is out of scope for implementer — surface to the orchestrator instead.
+- **No implementer dispatches without a plan-mission file existing.** If a track needs implementer dispatch but has no plan-mission at `docs/plan-missions/<slug>.md`, the orchestrator dispatches `planner` first — even retroactively (a plan-mission written *after* some implementers have already fanned out is still better than no plan-mission). Ad-hoc implementer dispatches off a spec directly are forbidden.
+- **Planner** is the only writer for initial plan-mission structure. Mid-flight structural changes (a task splitting into T4a + T4b, two tasks consolidating into one PR) trigger a `planner` re-dispatch, not a manual orchestrator edit.
+- **Implementer** also appends to the **Discovered constraints** log when execution reveals something the plan didn't predict.
+- **Conductor** reads the mission to compose the morning digest.
 
 Ticket-size norm: tasks default to ~50–200 LoC each. >200 LoC must be split unless the planner explicitly justifies atomicity. See [#17](#17-ticket-size-norm).
 
@@ -399,6 +401,56 @@ Conversely, when the orchestrator's plan-mission contains a task blocked on outp
 **Post-merge action sequence** for the orchestrator becomes:
 
 1. PR merges (per merge policy).
-2. Plan-mission task marker flips to `[x]`.
+2. Plan-mission task marker flips to `[x]` — by the orchestrator, in the same turn (see [#23](#23-plan-mission-maintenance-is-the-orchestrators-standing-lane)).
 3. **Cross-repo handoff:** if the merged PR produced an artifact a sibling or upstream repo consumes, file an issue in the consuming/upstream repo referencing the merged PR + plan-mission task. Apply the `dependencies` label. Use the categories table above for tone and title shape.
 4. Scan plan-mission for newly-unblocked tasks (per [#18](#18-aggressive-implementer-fan-out-on-dependency-satisfaction)); dispatch implementers per worktree isolation defaults ([#11](#11-worktree-default-for-edit-making-subagents)).
+
+### 23. Plan-mission maintenance is the orchestrator's standing lane
+
+The plan-mission file at `docs/plan-missions/<slug>.md` is the orchestrator's standing-lane responsibility. After every state change — implementer dispatched, PR opened, adversary returned, PR merged, cascade triggered, PR superseded, task split or consolidated — the orchestrator updates the plan-mission file in the same turn as the dispatch / merge / status-change.
+
+**Why v2 / v3-prerelease doctrine broke here.** Earlier versions said *"implementer updates each task's status marker as work proceeds."* That model assumed:
+
+1. **One implementer at a time.** With [#18](#18-aggressive-implementer-fan-out-on-dependency-satisfaction)'s fan-out, N implementers run concurrently and each one only sees its own task. Cross-task state (cascade markers, supersession notes, consolidations) had no owning agent.
+2. **One PR per task.** With [#21](#21-pr-ceremony-for-every-change)'s per-merge PR ceremony plus practical realities (PRs supersede each other; tasks split mid-stream; CI cascades break and unbreak), PR ↔ task is not 1:1.
+3. **Implementer has full view.** A single implementer on a worktree sees its task only. It can't update siblings dispatched in the same fan-out batch.
+
+The orchestrator is the only agent with the complete view; it must own the file.
+
+**Implementer's reduced scope.** Implementer touches the plan-mission **only to flip its own task's marker** (`[ ]` → `[~]` → `[x]`). Cross-task state changes are out of scope for implementer — surface to the orchestrator instead.
+
+**No-plan-mission rule.** If a track needs implementer dispatch but no plan-mission file exists at `docs/plan-missions/<slug>.md`, the orchestrator dispatches `planner` first. Retroactive plan-missions are still better than no plan-mission. Ad-hoc implementer dispatches directly off a spec are forbidden.
+
+**Planner's reinforced role.** `planner` is the only writer for *initial* plan-mission structure. Mid-flight structural changes (a task splitting into T4a + T4b; two tasks consolidating into one PR) trigger a `planner` re-dispatch, not a manual orchestrator edit. The orchestrator owns the *running state* (markers, cascade notes); planner owns the *structure* (task graph, dependencies, splits).
+
+**Failure mode this prevents.** Without this lane assignment, plan-mission files go stale within hours of fan-out activating. The "living plan-mission" promise rots silently the moment parallelism kicks in. Operator-observed: `noah-2` Track A's plan-mission showed T2 / T4a / T4b / T7 as "proposed" for hours after they had been bundled into a merged PR. Track B had no plan-mission file at all and ran ad-hoc against the spec.
+
+### 24. Orchestrator proactively checks in on long-running background agents
+
+Stuck subagents — Bash denial at commit time, infinite tool loop, hung shell call — fail silently if the orchestrator only listens for completion notifications. Long silences are signals, not noise.
+
+**Mechanism.** At every turn boundary, the orchestrator scans in-flight subagent dispatch timestamps. For any agent past its expected duration, it autonomously checks in: either `Read` the agent's task output / transcript, or `SendMessage` asking for status.
+
+**Expected-duration defaults** (override per-task when the plan-mission task is genuinely larger):
+
+| Subagent | Expected duration |
+| --- | --- |
+| `implementer` | 10 min |
+| `test-author` | 10 min |
+| `spec-writer` | 5 min |
+| `adversary` | 5 min |
+| `doc-keeper` | 5 min |
+| `plan-reviewer` | 5 min |
+| `architect` | varies — gated on user, not a check-in target |
+
+**On detecting a stuck agent:**
+
+1. Read the agent's transcript / JSONL output to identify the blocking step.
+2. **If Bash denial** (see [#15](#15-bash-auto-allowlist-for-known-safe-subagent-commands)): widen the allowlist + re-dispatch, OR salvage the worktree edits by folding them into an orchestrator-merge-step (one of the direct-to-main exceptions in [#21](#21-pr-ceremony-for-every-change)), OR re-dispatch the agent with an `edit-only-no-git` constraint and let the orchestrator commit on its behalf.
+3. **If hung tool call** or **infinite loop**: cancel + re-dispatch with a revised prompt.
+4. **If genuinely just-slow** (large task, legitimate iteration): note the actual duration in the plan-mission so future dispatches calibrate.
+5. **Log the observation** in `docs/research/agent-team-calibration.md` if it represents a new failure mode.
+
+**Companion to [#15](#15-bash-auto-allowlist-for-known-safe-subagent-commands) and [#16](#16-worktree-cleanup-must-respect-uncommitted-changes).** Those three together close the silent-failure loop: #15 prevents most Bash denials from happening; #16 preserves uncommitted edits when they do; #24 catches the agent that *was* denied and is now silently stuck so the orchestrator can intervene before downstream cascade work is blocked.
+
+**Failure mode this prevents.** Operator-observed: `noah-2` 2026-05-14 — a PR fixup implementer hit Bash denial at the commit step, returned no edits, and the orchestrator only noticed the agent was stuck when the user manually pointed at PR #19 being silent for 30+ minutes. Earlier in the same session, PR #15 / PR #10 rebase agents left stale conflicts because nobody checked back after dispatch. The "set and forget" dispatch model fails when Bash denial is the dominant failure mode.

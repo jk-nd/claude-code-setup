@@ -24,6 +24,8 @@ Two or three sentences from the approved approach doc. Why this shape, not the a
 
 Tasks in dependency order. Status markers: `[ ]` pending, `[~]` in-progress, `[x]` done, `[d]` deferred, `[?]` blocked-by-question.
 
+**Ownership of this file.** The **orchestrator** owns the plan-mission as a standing-lane responsibility (per AGENTS.md operating clarification #23). It updates state after every dispatch, PR open, adversary verdict, merge, cascade, supersession, split, or consolidation — in the same turn. `implementer` touches the file **only** to flip its own task's marker (`[ ]` → `[~]` → `[x]`). `planner` writes initial structure and is re-dispatched for mid-flight splits / consolidations; planner does not edit running-state markers on existing tasks.
+
 **Ticket-size norm: ~50–200 LoC per task.** Tasks projected over 200 LoC must be split unless `planner` explicitly justifies why the work is atomic. See AGENTS.md operating clarification #17. The implementer fleet absorbs 5–10 small tasks in parallel; 2–3 large ones serialise regardless of worktree availability.
 
 ### Ready to dispatch now
