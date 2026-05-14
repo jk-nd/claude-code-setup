@@ -66,6 +66,15 @@ const skipLabel = "coverage-skip"
 // of the threshold is treated as "meets threshold".
 const epsilon = 0.05
 
+// warnBand is the size of the soft band immediately below the threshold.
+// Measured ≥ threshold → PASS. threshold − warnBand ≤ measured < threshold
+// → WARN (logged, surfaced in step summary, exit 0). measured < threshold
+// − warnBand → FAIL (exit 1). Avoids the v2 friction where every PR with
+// new defensive code FAILs the gate and needs a follow-up baseline PR;
+// the v3 band gives the baseline gentle drift room while still blocking
+// real regressions. See claude-code-setup#6 Section G.
+const warnBand = 0.3
+
 func main() {
 	var (
 		baselinePath = flag.String("baseline", "ops/coverage-baseline.json", "path to the baseline JSON")
@@ -180,6 +189,15 @@ type result struct {
 // package that is not in the baseline but slipped below 50%. The 50%
 // threshold for unbaselined packages avoids a flood of WARNs from
 // scaffolding/test-helper packages that genuinely don't need coverage.
+//
+// Three-band logic for baselined packages (v3 relaxed band, see
+// claude-code-setup#6 Section G):
+//   - measured ≥ threshold − epsilon       → PASS
+//   - threshold − warnBand ≤ measured < threshold − epsilon → WARN
+//   - measured < threshold − warnBand      → FAIL
+//
+// A missing measurement (baseline names a package the profile does not
+// cover) stays FAIL — a stale baseline must not silently stop enforcing.
 func evaluate(b *baseline, measured map[string]float64) []result {
 	out := make([]result, 0, len(b.Thresholds)+8)
 	for pkg, threshold := range b.Thresholds {
@@ -195,6 +213,8 @@ func evaluate(b *baseline, measured map[string]float64) []result {
 			r.Status = StatusFail
 		case actual+epsilon >= threshold:
 			r.Status = StatusPass
+		case actual+warnBand >= threshold:
+			r.Status = StatusWarn
 		default:
 			r.Status = StatusFail
 		}

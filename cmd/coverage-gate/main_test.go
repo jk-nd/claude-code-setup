@@ -63,6 +63,42 @@ func TestEvaluate_EpsilonTolerance(t *testing.T) {
 	}
 }
 
+// TestEvaluate_WarnBand covers the v3 three-band logic — measured
+// within `warnBand` (0.3) below threshold should WARN, not FAIL, so the
+// baseline tolerates gentle defensive-coverage drift without forcing a
+// follow-up baseline-update PR per AGENTS.md / docs/setup.md. Anything
+// further below the threshold than `warnBand` stays a FAIL.
+func TestEvaluate_WarnBand(t *testing.T) {
+	b := &baseline{Thresholds: map[string]float64{
+		"github.com/x/in-band":   80.0, // measured 79.8 → WARN (0.2 under)
+		"github.com/x/edge-band": 80.0, // measured 79.71 → WARN (just inside band)
+		"github.com/x/below":     80.0, // measured 79.5 → FAIL (0.5 under, beyond band)
+		"github.com/x/pass":      80.0, // measured 80.0 exact → PASS
+	}}
+	got := evaluate(b, map[string]float64{
+		"github.com/x/in-band":   79.8,
+		"github.com/x/edge-band": 79.71,
+		"github.com/x/below":     79.5,
+		"github.com/x/pass":      80.0,
+	})
+	statuses := map[string]Status{}
+	for _, r := range got {
+		statuses[r.Package] = r.Status
+	}
+	if statuses["github.com/x/in-band"] != StatusWarn {
+		t.Errorf("in-band: got %q, want WARN", statuses["github.com/x/in-band"])
+	}
+	if statuses["github.com/x/edge-band"] != StatusWarn {
+		t.Errorf("edge-band: got %q, want WARN", statuses["github.com/x/edge-band"])
+	}
+	if statuses["github.com/x/below"] != StatusFail {
+		t.Errorf("below: got %q, want FAIL (beyond warn band)", statuses["github.com/x/below"])
+	}
+	if statuses["github.com/x/pass"] != StatusPass {
+		t.Errorf("pass: got %q, want PASS", statuses["github.com/x/pass"])
+	}
+}
+
 func TestLoadBaseline(t *testing.T) {
 	dir := t.TempDir()
 	good := filepath.Join(dir, "good.json")

@@ -1,0 +1,55 @@
+# Auto-rebase stale dependabot PRs.
+#
+# Runs nightly (04:00 UTC) and on manual dispatch. Lists open dependabot
+# PRs in `CONFLICTING` state and posts `@dependabot rebase` to each. The
+# pattern eliminates the "every dependabot PR sat stale for hours waiting
+# for a manual rebase ping" failure mode from go-mcp-gw's 2026-04-26
+# operating-day.
+#
+# Bootstrap renames this file from `.template` to `.yml` when the
+# operator opts in via `scripts/bootstrap.sh`. Requires Dependabot to be
+# active in the repo.
+#
+# Idempotent: re-posting `@dependabot rebase` to a PR that just rebased
+# is a no-op; Dependabot will just rebase again.
+#
+# References: AGENTS.md operating clarification on CI as async backstop;
+# observed friction #1 in `claude-code-setup#6`.
+
+name: Auto-rebase stale dependabot PRs
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  rebase-stale:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post @dependabot rebase to conflicting PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # `gh pr list --json mergeable` returns "CONFLICTING" |
+          # "MERGEABLE" | "UNKNOWN". Filter on CONFLICTING.
+          numbers=$(gh pr list \
+            --repo "$REPO" \
+            --author "dependabot[bot]" \
+            --state open \
+            --json number,mergeable \
+            --jq '.[] | select(.mergeable == "CONFLICTING") | .number')
+          if [ -z "$numbers" ]; then
+            echo "No conflicting dependabot PRs."
+            exit 0
+          fi
+          for n in $numbers; do
+            echo "Pinging PR #$n..."
+            gh pr comment "$n" --repo "$REPO" --body "@dependabot rebase"
+          done

@@ -39,6 +39,12 @@ DO return with `needs-clarification` for:
 - Any operation on `WATCHED_PATHS`, `.github/`, or repo settings.
 - Tests that appear contradictory or impossible to satisfy without changing the spec.
 
+## Bash denials are first-class signal, not silent exits
+
+If `git commit` or any other in-allowlist operation is denied by the harness's permission gate (per AGENTS.md operating clarification #15/#16), surface the denial in your return value with the full denied command and the reason. The orchestrator MUST NOT interpret "no commit" as "no work" — uncommitted worktree edits are work that needs to be preserved, not lost.
+
+If the harness has cleaned up your worktree because of a denial chain, return that explicitly so the orchestrator can re-dispatch with the right allowlist scope rather than re-running you from scratch.
+
 ## Done condition
 
 Task `T<N>` is `[x]` in the plan-mission. Commit landed on the worktree branch. `test-author`-written tests pass locally. Lint clean. Affected docs updated in the same commit. Discovered constraints (if any) logged in the plan. Return the commit SHA and the list of green tests.

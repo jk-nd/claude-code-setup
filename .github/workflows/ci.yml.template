@@ -28,6 +28,16 @@ on:
       - '.github/PULL_REQUEST_TEMPLATE.md'
       - 'LICENSE'
       - 'CHANGELOG.md'
+  # GitHub merge queue — re-runs build/test/lint against the queued PR
+  # rebased onto post-previous-merge `main` before letting the merge land.
+  # Eliminates the merge-cascade collision pattern where two PRs that pass
+  # CI individually break `main` when both land sequentially. See
+  # `docs/operating.md` for the explainer and AGENTS.md operating
+  # clarification on merge-cascade collisions. Bootstrap optionally
+  # enables the merge queue via `gh api graphql` on the repo's branch
+  # protection ruleset; this trigger is harmless when the queue is off.
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read
