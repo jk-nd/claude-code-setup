@@ -11,7 +11,7 @@ See [`README.md`](../README.md) for the one-paragraph overview and [`AGENTS.md`]
 3. Prompts for `ceremony_level` (`foundation` | `demo` | `iterate-fast`).
 4. Substitutes placeholders into the always-renamed template files (`ci.yml`, `CODEOWNERS`).
 5. Prompts for opt-in template renames: docs-audit, dependabot, govulncheck, nightly, `.claude/settings.json`, dependabot-automerge, dependabot-rebase-stale, main-broken-sentinel, smoke-test playbook.
-6. Creates labels: `compliance-review`, `doc-stale`, `coverage-skip`, `automerge`, `dependabot:major-review-needed`, `main-broken`, `agentic-review:degraded`.
+6. Creates labels: `compliance-review`, `doc-stale`, `coverage-skip`, `automerge`, `dependabot:major-review-needed`, `main-broken`, `dependencies`.
 7. Optionally installs the strict-recipe pre-push git hook.
 8. Optionally configures branch protection on `main`.
 9. Optionally enables GitHub merge queue on `main`.
@@ -120,15 +120,7 @@ Replace the `go build ./...` line in the workflow with your project's quick-veri
 
 ## ANTHROPIC_API_KEY and agentic-review
 
-v3's default `adversary` subagent runs locally via the orchestrator's Claude Code session (using your Max/Ultra OAuth) and does NOT require `ANTHROPIC_API_KEY` as a repo secret.
-
-If your project re-introduces a CI-side LLM review (v1's `cmd/agentic-review/` pattern):
-
-1. Set `ANTHROPIC_API_KEY` as a repo secret. Configure a budget cap on the [Anthropic console](https://console.anthropic.com/).
-2. Opt in to `agentic-review-degraded-label.yml.template` so degraded runs (missing key, quota hit) get the `agentic-review:degraded` label applied automatically.
-3. Optionally make the label's absence a required check via branch protection.
-
-See `docs/agentic-review.md` for the contract.
+Not needed. v3's `adversary` subagent runs locally via the orchestrator's Claude Code session (using your Max/Ultra OAuth) and does NOT require `ANTHROPIC_API_KEY` as a repo secret. v3 does NOT bring back v1's CI-side `cmd/agentic-review/` workflow — the v2 decision to move review upstream into `adversary` stands. See `docs/agentic-review.md` for context.
 
 ## Smoke-test playbook
 

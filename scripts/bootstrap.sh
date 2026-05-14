@@ -16,11 +16,10 @@
 #   5. Rename always-renamed *.template -> their non-template name.
 #   6. Prompt-rename the opt-in *.template files: dependabot, govulncheck,
 #      nightly, docs-audit, .claude/settings.json, dependabot-automerge,
-#      dependabot-rebase-stale, main-broken-sentinel, smoke-test playbook,
-#      agent-team-calibration log.
+#      dependabot-rebase-stale, main-broken-sentinel, smoke-test playbook.
 #   7. Create labels: compliance-review, doc-stale, coverage-skip,
 #      automerge, dependabot:major-review-needed, main-broken,
-#      agentic-review:degraded.
+#      dependencies.
 #   8. Optionally install the strict-recipe pre-push git hook.
 #   9. Optionally configure branch protection on `main` with a
 #      maintainer-identity allowlist (solo-author = merger stays
@@ -405,20 +404,6 @@ if [ -f ".github/workflows/main-broken-sentinel.yml.template" ]; then
     fi
 fi
 
-# agentic-review degraded label — opt-in for projects with a CI-side LLM review.
-if [ -f ".github/workflows/agentic-review-degraded-label.yml.template" ]; then
-    echo "  agentic-review-degraded-label.yml is for projects that run a CI-side"
-    echo "  LLM review and want to auto-apply the 'agentic-review:degraded'"
-    echo "  label when the review runs in degraded mode (missing API key, quota"
-    echo "  hit). NOT needed if you use v3's default 'adversary' subagent."
-    if prompt_yn "Enable agentic-review degraded-mode label workflow?" "n"; then
-        rename_template ".github/workflows/agentic-review-degraded-label.yml.template" ".github/workflows/agentic-review-degraded-label.yml"
-        echo "  Edit the workflow to point at your CI-side review workflow's name."
-    else
-        echo "  Skipped."
-    fi
-fi
-
 # Smoke-test playbook (issue #20).
 if [ -f "templates/smoke-test-playbook.md.template" ]; then
     if prompt_yn "Install starter smoke-test playbook (recommended for projects with a UI / SPA / interactive demo)?" "n"; then
@@ -451,7 +436,6 @@ create_label "coverage-skip"                  "ededed" "Bypass per-package cover
 create_label "automerge"                      "0e8a16" "Dependabot patch/minor PR — auto-merge after CI green"
 create_label "dependabot:major-review-needed" "d93f0b" "Dependabot major bump — human review required"
 create_label "main-broken"                    "b60205" "Post-merge sentinel detected main fails quick verify; merge cascade likely"
-create_label "agentic-review:degraded"        "fbca04" "CI-side agentic review ran in degraded mode (missing key, quota, deadline)"
 create_label "dependencies"                   "0e8a16" "Tracks a cross-repo dependency surfaced by another repo's orchestrator (per AGENTS.md)"
 
 # -----------------------------------------------------------------
@@ -569,17 +553,12 @@ Bootstrap complete.
 Next steps:
   1. Set GOOGLE_AI_STUDIO_API_KEY in your shell env (free key at
      https://aistudio.google.com). The plan-reviewer subagent uses it.
-  2. (Optional, only if you re-introduce a CI-side LLM review)
-     Set ANTHROPIC_API_KEY as a repo secret with a budget cap on the
-     Anthropic console. v3's default 'adversary' subagent uses the local
-     Claude CLI and does NOT require this; only projects that bring back
-     a CI-side review need it.
-  3. Replace the Go-flavoured CI (.github/workflows/ci.yml) with one for
+  2. Replace the Go-flavoured CI (.github/workflows/ci.yml) with one for
      your stack. The job-shape and concurrency block carry over.
-  4. Edit .github/CODEOWNERS to reference real team handles once they
+  3. Edit .github/CODEOWNERS to reference real team handles once they
      exist in your org.
-  5. Start the orchestrator: cd <repo> && claude.
-  6. Tell it what to build. Approve at the four gates: approach, spec,
+  4. Start the orchestrator: cd <repo> && claude.
+  5. Tell it what to build. Approve at the four gates: approach, spec,
      plan-mission, compliance-routed PRs.
 
 Re-running this script is safe — it is idempotent.

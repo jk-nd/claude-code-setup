@@ -1,12 +1,8 @@
 # Agentic review — v3
 
-v3's default code-review path is the `adversary` subagent (pre-PR, full orchestrator context, opt-out impossible by design — see `.claude/agents/adversary.md`). This supersedes the v1 CI-side `cmd/agentic-review/` workflow, which the v2 audit showed produced near-zero useful signal because it ran post-PR with truncated context.
+v3's code-review path is the `adversary` subagent (pre-PR, full orchestrator context, opt-out impossible by design — see `.claude/agents/adversary.md`).
 
-This doc covers:
-
-1. The `adversary` review dimensions (the in-flight contract).
-2. The opt-in `agentic-review-degraded-label.yml.template` workflow for projects that DO re-introduce a CI-side LLM review.
-3. The smoke-test sync dimension added in v3.
+This supersedes v1's CI-side `cmd/agentic-review/` workflow, which the v2 audit showed produced near-zero useful signal because it ran post-PR with truncated context. v2 removed the binary + workflow entirely; v3 keeps it out. There is **no opt-in path** in v3 to bring back the CI-side review — the v2 decision stands.
 
 ## What `adversary` reviews
 
@@ -36,30 +32,8 @@ The check is conservative: a false positive (flagging a PR that doesn't actually
 
 Recovery: see [`docs/operating.md` § When `adversary` flags Smoke-test sync](operating.md#when-adversary-flags-smoke-test-sync).
 
-## Opt-in CI-side LLM review
-
-Some projects re-introduce a CI-side LLM review on top of `adversary` (e.g., for diversity of opinion, or for compliance-routed PRs where a separate evidence trail is required). For those, v3 ships:
-
-- `.github/workflows/agentic-review-degraded-label.yml.template` — auto-applies the `agentic-review:degraded` label when the upstream review workflow finishes in any non-success state. Auto-removes the label on a successful re-run.
-- The `agentic-review:degraded` label itself (created by bootstrap).
-- A documented contract for `ANTHROPIC_API_KEY` as a repo secret with a budget cap.
-
-### Wiring
-
-1. Bootstrap-opt-in: when prompted, accept `Enable agentic-review degraded-mode label workflow?`. The template renames to `.yml`.
-2. Edit the workflow's `workflows: [<your-review-job>]` line to name your CI-side review workflow.
-3. Add `if: failure() || steps.<your-step>.outputs.degraded == 'true'` branches at the relevant detection points in your review workflow.
-4. (Optional) Configure branch protection to treat the `agentic-review:degraded` label as a required-absent label.
-5. Set `ANTHROPIC_API_KEY` as a repo secret. Configure a budget cap on the Anthropic console.
-
-### Why v3 default does NOT enable this
-
-`adversary`'s OAuth-based local invocation does not have a CI-side degraded mode in the same way: it uses the orchestrator's existing Claude subscription, not a secret-stored API key, and runs locally rather than in a GitHub Actions job. If `adversary` can't run, the orchestrator surfaces it directly to the user — no silent-degraded-pass failure mode to label around.
-
-The label workflow is shipped for completeness; projects that don't add a CI-side review can ignore it.
-
 ## What changed from v1 / v2
 
 - **v1**: `cmd/agentic-review/` CI workflow, opt-out via env var, near-zero useful signal in practice. Audited and disabled mid-2026.
 - **v2**: `adversary` subagent replaces v1; six review dimensions; pre-PR with full orchestrator context; OAuth-based, no API key secret needed. CI-side path removed entirely.
-- **v3**: `adversary` adds the **Smoke-test sync** dimension. The `agentic-review-degraded-label.yml.template` ships for projects that re-introduce a CI-side LLM review on top of `adversary`. v3 does not bring back the v1 binary.
+- **v3**: `adversary` adds the **Smoke-test sync** dimension. v3 does NOT bring back the v1 CI-side path — the v2 decision stands. If a project insists on a CI-side LLM review on top of `adversary`, that's a project-local concern and lives outside this template.

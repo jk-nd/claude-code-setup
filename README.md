@@ -7,9 +7,10 @@
 |  |  |
 | --- | --- |
 | What you get | 9 subagent definitions, plan-mission template, trust-boundary CI gate, Gemini + Opus plan-review pipeline, weekly docs audit, lean CI defaults, merge-queue triggers, dependabot auto-merge + rebase-stale + main-broken sentinel templates, smoke-test playbook starter, agent-team calibration log, three-band coverage gate, ceremony-level switch |
+
 | What you bring | A language-specific `ci.yml`, team handles, branch-protection / Rulesets settings, a Google AI Studio API key (free) |
 | How to start | Click **Use this template** on GitHub (use the `v3` branch when published), then `scripts/bootstrap.sh` |
-| Required keys | `GOOGLE_AI_STUDIO_API_KEY` env var (free tier) for plan second opinions. Claude Code login (Max/Ultra via OAuth) for everything else. No per-PR LLM cost. `ANTHROPIC_API_KEY` only if you re-introduce a CI-side LLM review on top of `adversary`. |
+| Required keys | `GOOGLE_AI_STUDIO_API_KEY` env var (free tier) for plan second opinions. Claude Code login (Max/Ultra via OAuth) for everything else. No per-PR LLM cost. No `ANTHROPIC_API_KEY` (v3 does NOT bring back the v1 CI-side review). |
 | Where the human is | Architectural-shape gates (approach / spec / plan-mission / compliance-routed PRs) — not every individual decision the architect surfaces, not on every PR, not in code review. |
 
 ## The operating model in one paragraph
@@ -92,7 +93,7 @@ Each agent is project-scoped (lives under `.claude/agents/` in the repo). Their 
    - Prompt for `WATCHED_PATHS` (defaults include `.github/workflows/`, `go.mod`, `go.sum`, `.github/CODEOWNERS` plus your project-specific compliance paths).
    - Prompt for `ceremony_level` (`foundation` / `demo` / `iterate-fast`).
    - Substitute placeholders and rename `*.template` files.
-   - Create labels: `compliance-review`, `doc-stale`, `coverage-skip`, `automerge`, `dependabot:major-review-needed`, `main-broken`, `agentic-review:degraded`.
+   - Create labels: `compliance-review`, `doc-stale`, `coverage-skip`, `automerge`, `dependabot:major-review-needed`, `main-broken`, `dependencies`.
    - Optionally configure branch protection / Rulesets on `main`.
    - Optionally enable GitHub merge queue on `main`.
 4. Edit `.github/CODEOWNERS` to reference real team handles once they exist.
@@ -126,7 +127,6 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference and [`docs/
 | `.github/workflows/dependabot-automerge.yml.template` | (Opt-in) Patch/minor auto-merge; major routed to human review. |
 | `.github/workflows/dependabot-rebase-stale.yml.template` | (Opt-in) Nightly cron to `@dependabot rebase` conflicting PRs. |
 | `.github/workflows/main-broken-sentinel.yml.template` | (Opt-in) Post-merge build sentinel; files `main-broken` issue on failure. |
-| `.github/workflows/agentic-review-degraded-label.yml.template` | (Opt-in) Auto-applies `agentic-review:degraded` label when CI-side LLM review degrades. Not needed if you use v3's default `adversary` subagent. |
 | `.github/dependabot.yml.template` | (Opt-in) Weekly dependency bumps. |
 | `.github/CODEOWNERS.template` | Skeleton with `${WATCHED_PATHS}` placeholders. |
 | `.github/ISSUE_TEMPLATE/` | Six archetypes: epic, sub-issue, hardening, testing, ci, doc-stale. |
