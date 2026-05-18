@@ -112,6 +112,29 @@ Override per-PR: remove the `automerge` label before CI completes, or comment `@
 
 Opt-in (depends on Dependabot being on). `dependabot-rebase-stale.yml.template` runs nightly (04:00 UTC) and posts `@dependabot rebase` to any open dependabot PR in `CONFLICTING` state. Eliminates the "every dependabot PR sits stale for hours waiting for a manual ping" failure mode.
 
+## Release workflow
+
+Opt-in. `release.yml.template` fires on tag push (`v<X>.<Y>.<Z>` with optional `-pre*` / `-rc*` / `-alpha*` / `-beta*` suffix). Two responsibilities, in order:
+
+1. Build + publish artifacts (project-specific commented stubs — fill in your build steps).
+2. Always create a GitHub Release object with body from `docs/releases/<tag>.md`.
+
+The Release-creation step is the template invariant; build/push steps are project-specific. The workflow fails fast if `docs/releases/<tag>.md` is missing.
+
+### Per-tag notes convention
+
+Every tag has a corresponding `docs/releases/<tag>.md` file containing the Release body. Notes are:
+
+- **Version-controlled** — committed alongside the bumping change.
+- **Reviewable** — appear in the bumping PR's diff.
+- **Immutable post-release** — frozen once the tag is pushed.
+
+Bootstrap optionally seeds `docs/releases/v0.1.0.md` from `templates/release-notes.md.template`. Subsequent versions copy that file as a starting point.
+
+### Cutting a release
+
+See [`docs/operating.md` § Cutting a release](operating.md#cutting-a-release) for the orchestrator's step-by-step. tl;dr: open `release: vX.Y.Z` PR with notes file → merge → tag → `release.yml` fires.
+
 ## Main-broken sentinel
 
 Opt-in. `main-broken-sentinel.yml.template` runs a quick verify (default: `go build ./...`) on every push to `main` and files a `main-broken` issue + comments on the offending PR if it fails. Catches merge-cascade collisions when merge queue isn't enabled.

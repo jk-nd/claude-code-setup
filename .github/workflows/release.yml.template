@@ -1,0 +1,113 @@
+# Release workflow.
+#
+# Triggered on tag push (v<X>.<Y>.<Z> with optional `-pre*` / `-rc*` /
+# `-<channel>` suffix) and on manual workflow_dispatch. Two
+# responsibilities, in order:
+#
+#   1. Build + publish artifacts (operator-specific; commented stub).
+#   2. ALWAYS create the corresponding GitHub Release object, with body
+#      content sourced from `docs/releases/<tag>.md`.
+#
+# The Release-creation step is the *invariant* this template enforces.
+# Build/push steps are project-specific and live as commented stubs.
+#
+# Bootstrap renames this file from `.template` to `.yml` when the
+# operator opts in via `scripts/bootstrap.sh`.
+#
+# Per-tag notes convention: every tag has a corresponding file at
+# `docs/releases/<tag>.md` whose content is the Release body. The notes
+# are version-controlled, reviewable in the bumping PR, immutable
+# post-release. If the file doesn't exist when the tag is pushed, the
+# Release creation fails fast — that's the point. No silent gaps.
+#
+# References: AGENTS.md operating clarification #25 (release-workflow
+# invariant); claude-code-setup#24; recurring noah-2 toil where v0.1.0
+# through v0.3.1 tags shipped without Release objects.
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build and release (e.g. v1.2.3)'
+        required: true
+
+permissions:
+  contents: write     # required for creating the Release
+  packages: write     # required for pushing to GHCR (delete if not used)
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # === project-specific build + push steps =========================
+      # Replace these with your project's image-build / binary-publish
+      # logic. The release-create step below runs AFTER this section and
+      # the workflow's success gates on it.
+      #
+      # Example for a Docker project publishing to GHCR:
+      #
+      # - uses: docker/login-action@v3
+      #   with:
+      #     registry: ghcr.io
+      #     username: ${{ github.actor }}
+      #     password: ${{ secrets.GITHUB_TOKEN }}
+      #
+      # - uses: docker/build-push-action@v5
+      #   with:
+      #     context: .
+      #     file: cmd/foo/Dockerfile
+      #     push: true
+      #     tags: |
+      #       ghcr.io/${{ github.repository_owner }}/foo:${{ github.ref_name }}
+      #       ghcr.io/${{ github.repository_owner }}/foo:latest
+      #
+      # Example for Go binaries:
+      #
+      # - uses: actions/setup-go@v5
+      #   with:
+      #     go-version: '1.26'
+      #     cache: true
+      # - run: |
+      #     mkdir -p dist
+      #     CGO_ENABLED=0 GOOS=linux  GOARCH=amd64 go build -o dist/foo-linux-amd64  ./cmd/foo
+      #     CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o dist/foo-darwin-arm64 ./cmd/foo
+      # =================================================================
+
+      - name: Verify release notes exist
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          if [ ! -f "docs/releases/${TAG}.md" ]; then
+            echo "::error::docs/releases/${TAG}.md not found — every tag must ship with a release notes file in the bumping PR." >&2
+            echo "::error::See AGENTS.md operating clarification #25 and docs/operating.md § Release cutting." >&2
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name:     ${{ github.event.inputs.tag || github.ref_name }}
+          body_path: docs/releases/${{ github.event.inputs.tag || github.ref_name }}.md
+          # Pre-release if the tag has -pre, -rc, or -alpha/-beta suffix.
+          prerelease: ${{ contains(github.event.inputs.tag || github.ref_name, '-pre') || contains(github.event.inputs.tag || github.ref_name, '-rc') || contains(github.event.inputs.tag || github.ref_name, '-alpha') || contains(github.event.inputs.tag || github.ref_name, '-beta') }}
+          make_latest: ${{ !contains(github.event.inputs.tag || github.ref_name, '-pre') && !contains(github.event.inputs.tag || github.ref_name, '-rc') && !contains(github.event.inputs.tag || github.ref_name, '-alpha') && !contains(github.event.inputs.tag || github.ref_name, '-beta') }}
+          # Attach any artifact files the build steps placed under dist/
+          # (no-op when the project hasn't added build steps yet).
+          files: |
+            dist/*
+          fail_on_unmatched_files: false

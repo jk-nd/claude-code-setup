@@ -127,6 +127,8 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference and [`docs/
 | `.github/workflows/dependabot-automerge.yml.template` | (Opt-in) Patch/minor auto-merge; major routed to human review. |
 | `.github/workflows/dependabot-rebase-stale.yml.template` | (Opt-in) Nightly cron to `@dependabot rebase` conflicting PRs. |
 | `.github/workflows/main-broken-sentinel.yml.template` | (Opt-in) Post-merge build sentinel; files `main-broken` issue on failure. |
+| `.github/workflows/release.yml.template` | (Opt-in) Tag-push release workflow; builds artifacts + always creates the GitHub Release object with body from `docs/releases/<tag>.md`. |
+| `templates/release-notes.md.template` | (Opt-in) Starter shape for `docs/releases/<tag>.md`. Bootstrap can seed the first version. |
 | `.github/dependabot.yml.template` | (Opt-in) Weekly dependency bumps. |
 | `.github/CODEOWNERS.template` | Skeleton with `${WATCHED_PATHS}` placeholders. |
 | `.github/ISSUE_TEMPLATE/` | Six archetypes: epic, sub-issue, hardening, testing, ci, doc-stale. |
