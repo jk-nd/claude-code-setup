@@ -248,6 +248,8 @@ A separate Claude Code session can run as **navigator** (sounding board, sidebar
 
 Trigger condition for "this session is navigator" is **explicit and user-driven**, not memory-implicit. The user opens a second session, tells it "you are navigator," and that session does not load the orchestrator's repo as a working directory. Navigator findings are pasted back into the orchestrator session as user input, never side-channeled via shared memory or worktree edits.
 
+**Multi-AI handover.** When work crosses session boundaries — orchestrator ↔ navigator, or orchestrator ↔ another tool (Cursor, Codex) — each session that stashes WIP to switch branches MUST tag the stash with intent and surface stashes in the handover note. See [#27](#27-session-boundary-stash-hygiene) for the rules.
+
 ### 7. Read-outs are lossy; the artifact is canonical
 
 When the orchestrator summarises a doc's decisions back to the user, the source artifact (approach doc, spec, plan-mission) is authoritative. User and navigator should cross-check the read-out against the doc before approving.
@@ -454,3 +456,54 @@ Stuck subagents — Bash denial at commit time, infinite tool loop, hung shell c
 **Companion to [#15](#15-bash-auto-allowlist-for-known-safe-subagent-commands) and [#16](#16-worktree-cleanup-must-respect-uncommitted-changes).** Those three together close the silent-failure loop: #15 prevents most Bash denials from happening; #16 preserves uncommitted edits when they do; #24 catches the agent that *was* denied and is now silently stuck so the orchestrator can intervene before downstream cascade work is blocked.
 
 **Failure mode this prevents.** Operator-observed: `noah-2` 2026-05-14 — a PR fixup implementer hit Bash denial at the commit step, returned no edits, and the orchestrator only noticed the agent was stuck when the user manually pointed at PR #19 being silent for 30+ minutes. Earlier in the same session, PR #15 / PR #10 rebase agents left stale conflicts because nobody checked back after dispatch. The "set and forget" dispatch model fails when Bash denial is the dominant failure mode.
+
+### 25. Tag pushes always produce GitHub Release objects, with notes versioned in-tree
+
+Repos that publish artifacts have an invariant: **every tag has a corresponding GitHub Release object**, and the Release body is sourced from a version-controlled file at `docs/releases/<tag>.md`. The template's `release.yml.template` workflow encodes this — build/push steps are project-specific stubs, but the Release-creation step is non-negotiable.
+
+**Per-tag notes convention.** A release PR cuts a version and lands a corresponding `docs/releases/v<X.Y.Z>.md` file with the notes content alongside the substantive change. The notes are:
+
+- **Version-controlled** — they live in the repo's git history, not as an API artifact created post-hoc.
+- **Reviewable** — they appear in the bumping PR's diff alongside the change they describe.
+- **Immutable post-release** — once the tag is pushed and the Release object is created, the file freezes.
+
+`release.yml` fails fast if `docs/releases/<tag>.md` doesn't exist when the tag is pushed. No silent gaps where tags publish images but the Releases page stays empty.
+
+**Cutting a release.** The orchestrator-driven flow:
+
+1. Open a release PR. Title: `release: vX.Y.Z`. Diff includes `docs/releases/vX.Y.Z.md` with the notes content + whatever substantive change ships with this version (a fix, a feature, a vendored-patch bump).
+2. Merge to `main`.
+3. Tag the merge commit: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`.
+4. `release.yml` fires: builds artifacts, creates GitHub Release with the body from `docs/releases/vX.Y.Z.md`. `make_latest: true` unless tag has `-pre` / `-rc` / `-alpha` / `-beta` suffix.
+
+**Failure mode this prevents.** Operator-observed on `noah-2` 2026-05-14 → 2026-05-15: v0.1.0 through v0.3.1 tags shipped (images on GHCR, tags on the repo) without any GitHub Release objects. The navigator manually created five Release objects post-hoc via `gh api`. Without a template invariant, every repo bootstrapped without a `release.yml` of its own hits the same gap from scratch.
+
+### 26. Use closing keywords only when the PR fully resolves an issue
+
+GitHub's auto-close keywords (`closes`, `fixes`, `resolves`) operate on the issue number alone. Any scope qualifier that follows is **ignored**. A PR body line reading `Closes #81 Bug 1` will close the whole `#81` issue even when the PR fixes only Bug 1 and Bug 2 was explicitly deferred.
+
+**For partial fixes:**
+
+- Write `refs #N` or `addresses #N (Bug 1 only)` in the PR body — not `closes`/`fixes`/`resolves`.
+- On merge, the orchestrator (or PR author) manually comments on the issue stating what was resolved and what remains.
+- If the umbrella issue's scope is best split, file a separate narrow issue for the remaining work **before merge** so the trail is clean.
+
+**If an issue is auto-closed in error**, reopen it and post a comment naming the residual scope so the audit trail reflects reality.
+
+**Why this is template-level.** `adversary`'s **Stale claims** dimension checks that commit message / PR description match the diff — but it does not check whether closing keywords match the scope of the resolution. Operator discipline carries this; the template documents the failure mode so the discipline is shared, not re-discovered per repo.
+
+**Failure mode this prevents.** Operator-observed on `noah-2` 2026-05-15: PR #82 fixed Bug 1 of two named bugs in #81. PR body said `Closes #81 Bug 1. Bug 2 (Inspector token sub propagation) deferred.` GitHub auto-closed #81 anyway on merge. Navigator had to reopen + add a clarifying comment.
+
+### 27. Session-boundary stash hygiene
+
+When work is handed off across AI sessions — Cursor → Codex → navigator → orchestrator, or any other multi-tool flow — each session that needs to check out a different branch may `git stash` WIP. Anonymous stashes accumulate; nobody remembers what they contain; by session N the stash list is opaque dead weight.
+
+**Rules:**
+
+1. **Tag every stash with intent.** `git stash push -m "wip-<branch>-<short-reason>"` (e.g. `wip-bundle-a-realm-edits`). Anonymous `git stash` calls without `-m` are forbidden when handing off.
+2. **Surface stashes in the handover note.** When passing work to another session or to a human, include `git stash list` output verbatim plus what each entry is for. If the handover target is a human, also state whether each stash is safe to drop.
+3. **Drop on session boundary.** Every AI session that creates a stash is responsible for either restoring it or explicitly handing it off. Never close a session leaving an unowned stash on the working tree.
+
+**Orchestrator end-of-mission summary.** When `conductor` (or the orchestrator's own digest) closes out a mission, include a `Working-tree state:` line that names any open stashes and their owners. Empty state is the desired norm; non-empty state names what's there.
+
+**Failure mode this prevents.** Operator-observed on `noah-2-demo` 2026-05-15 end-of-session: three stashes across two branches from three different coordination steps over ~4 hours, all anonymous, none of them intentional carrying state. The user had to be asked to tiebreak whether each was safe to drop. Multi-AI sessions accumulate stash debt much faster than single-AI sessions; the discipline scales with the number of session boundaries crossed, not with the wall-clock duration.

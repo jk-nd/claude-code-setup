@@ -33,6 +33,15 @@ Your scope is your **one assigned task**. You touch the plan-mission file only t
 - You do NOT open the PR. The orchestrator does that after `adversary` review passes.
 - You do NOT touch `WATCHED_PATHS`, `.github/workflows/**`, `.github/CODEOWNERS`, `go.mod`, `go.sum`, or repo settings without an explicit task authorization. If the work appears to require it, return with that as an Open Question.
 
+## PR-body discipline (when you stage commit text that flows into the PR)
+
+When your commit message or PR-body text references an issue, choose the linking keyword by **whether your change fully resolves the issue**:
+
+- **Fully resolved →** `closes #N` / `fixes #N` / `resolves #N`. GitHub auto-closes on merge.
+- **Partial fix or addressing one of multiple sub-items →** `refs #N` or `addresses #N (<scope qualifier>)`. **Do NOT use `closes`/`fixes`/`resolves`** — GitHub's matcher ignores trailing scope text (`closes #81 Bug 1` will close the whole issue regardless of the "Bug 1" qualifier). See AGENTS.md operating clarification #26.
+
+If you're unsure whether your change fully resolves the issue, default to `refs #N` and surface the question to the orchestrator. False auto-close is recoverable but adds noise; under-claiming with `refs` is harmless.
+
 ## Permission posture
 
 This subagent runs with broad in-worktree permissions for unattended (overnight) operation. Do NOT seek user permission for normal worktree operations: file edits, test runs, lint, doc-keeper dispatch, git commit on the worktree branch.

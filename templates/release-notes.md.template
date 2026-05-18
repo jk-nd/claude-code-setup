@@ -1,0 +1,32 @@
+# ${TAG}
+
+> Release notes body. This file is read verbatim by `.github/workflows/release.yml` and becomes the GitHub Release body when the tag is pushed. Version-controlled, reviewable in the bumping PR, immutable post-release.
+>
+> Replace this preamble with the actual notes before merging the bumping PR.
+
+## What ships
+
+One paragraph naming the user-observable change. Not the implementation — the change.
+
+## How to consume
+
+Versioned artifact references (image tag, binary URL, library path). What the consumer changes on their side.
+
+```
+# Example — replace per release:
+docker pull ghcr.io/${OWNER}/${REPO}:${TAG}
+```
+
+## Notable changes since last release
+
+- ...
+
+## Compatibility
+
+What this release breaks (if anything). Migration steps if non-trivial.
+
+## Known issues
+
+Linked to follow-up issues, not described in prose.
+
+- ...

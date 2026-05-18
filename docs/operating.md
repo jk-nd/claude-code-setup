@@ -121,6 +121,39 @@ Per AGENTS.md operating clarification #9: the architect (and downstream agents) 
 
 If the user feels over-asked, the recovery is: re-read the relevant agent definition, re-check that the `## Decisions made by architect (push back if wrong)` section is being populated, and (if needed) tighten the agent's prompt to bias more toward decide. The 3:1 decide:ask target ratio applies to established approach docs (Decisions 10+); early in the doc, ask-heavy is correct.
 
+## Cutting a release
+
+Per AGENTS.md operating clarification #25: every tag has a corresponding GitHub Release object, and the Release body is sourced from `docs/releases/<tag>.md`. The template's `release.yml.template` workflow enforces this — the build/push steps are project-specific stubs, but the Release-creation step is non-negotiable.
+
+Orchestrator-driven flow:
+
+1. **Open a release PR.** Title: `release: vX.Y.Z`. Diff includes `docs/releases/vX.Y.Z.md` with the notes content alongside the substantive change (fix, feature, vendored-patch bump, etc.).
+2. **Merge to `main`.**
+3. **Tag the merge commit:** `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`.
+4. **`release.yml` fires:** builds artifacts (per the project's stub fill-in), then creates the GitHub Release with the body from `docs/releases/vX.Y.Z.md`. Marked `latest` unless tag has `-pre` / `-rc` / `-alpha` / `-beta` suffix.
+
+If `docs/releases/<tag>.md` doesn't exist when the tag is pushed, the workflow fails fast on the "Verify release notes exist" step. The file is the contract; missing file = missing release.
+
+## Closing-keyword discipline
+
+Per AGENTS.md operating clarification #26: `closes #N` / `fixes #N` / `resolves #N` operate on the issue number alone — GitHub's matcher ignores scope qualifiers that follow. Use them only when the PR fully resolves the issue.
+
+For partial fixes, use `refs #N` or `addresses #N (<scope>)`. On merge, manually comment on the issue stating what was resolved and what remains. If an auto-close happened in error, reopen and post a residual-scope comment.
+
+When opening a PR that fixes one of several sub-items in an umbrella issue, consider splitting the umbrella into a narrow follow-up issue **before merge** so the trail is clean rather than reconstructed post-hoc.
+
+## Session-boundary stash hygiene
+
+Per AGENTS.md operating clarification #27: multi-AI sessions accumulate stash debt unless every session tags its stashes with intent and surfaces them in the handover note.
+
+Rules:
+
+1. **Tag intent:** `git stash push -m "wip-<branch>-<short-reason>"`. Never anonymous when handing off.
+2. **Surface in handover:** `git stash list` output + what each entry is for. State whether each is safe to drop.
+3. **Drop on session boundary:** each session that creates a stash either restores it or hands it off explicitly. No unowned stashes.
+
+The orchestrator's end-of-mission digest carries a `Working-tree state:` line naming any open stashes and their owners. Empty state is the norm.
+
 ## Dispatch over self
 
 Per AGENTS.md operating clarification #12: the orchestrator dispatches subagents on worktrees for every task with a named owning role. Direct work is reserved for PR open/merge, task-list state, and single-line calibration-log entries.

@@ -16,7 +16,8 @@
 #   5. Rename always-renamed *.template -> their non-template name.
 #   6. Prompt-rename the opt-in *.template files: dependabot, govulncheck,
 #      nightly, docs-audit, .claude/settings.json, dependabot-automerge,
-#      dependabot-rebase-stale, main-broken-sentinel, smoke-test playbook.
+#      dependabot-rebase-stale, main-broken-sentinel, release,
+#      smoke-test playbook.
 #   7. Create labels: compliance-review, doc-stale, coverage-skip,
 #      automerge, dependabot:major-review-needed, main-broken,
 #      dependencies.
@@ -387,6 +388,51 @@ if [ -f ".github/workflows/nightly.yml.template" ]; then
     if prompt_yn "Enable nightly workflow?" "n"; then
         rename_template ".github/workflows/nightly.yml.template" ".github/workflows/nightly.yml"
         echo "  WARNING: edit .github/workflows/nightly.yml's matrix.include before merging — the placeholders will not compile against your code."
+    else
+        echo "  Skipped."
+    fi
+fi
+
+# Release workflow (publishes artifacts + creates GitHub Release on tag push).
+if [ -f ".github/workflows/release.yml.template" ]; then
+    echo "  release.yml publishes images/binaries (project-specific stubs) AND"
+    echo "  creates a GitHub Release object on every tag push, sourcing the"
+    echo "  body from docs/releases/<tag>.md. The Release-create step is the"
+    echo "  template invariant; build/push steps are commented stubs you edit."
+    if prompt_yn "Enable release workflow?" "y"; then
+        rename_template ".github/workflows/release.yml.template" ".github/workflows/release.yml"
+        mkdir -p docs/releases
+        # .gitkeep so the directory exists in git even before the first tag.
+        if [ ! -f "docs/releases/.gitkeep" ]; then
+            : > docs/releases/.gitkeep
+        fi
+        echo "  -> docs/releases/ created."
+        if [ -f "templates/release-notes.md.template" ]; then
+            if prompt_yn "Seed docs/releases/v0.1.0.md from the starter template?" "y"; then
+                if [ -f "docs/releases/v0.1.0.md" ]; then
+                    echo "  docs/releases/v0.1.0.md already exists; leaving in place."
+                    rm -f templates/release-notes.md.template
+                else
+                    cp templates/release-notes.md.template docs/releases/v0.1.0.md
+                    # Substitute ${OWNER}, ${REPO}, ${TAG} placeholders.
+                    OWNER="$OWNER" REPO="$REPO" TAG="v0.1.0" \
+                        python3 - "docs/releases/v0.1.0.md" <<'PYEOF'
+import os, sys
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    body = f.read()
+for k in ("OWNER", "REPO", "TAG"):
+    body = body.replace("${" + k + "}", os.environ.get(k, ""))
+with open(path, "w", encoding="utf-8") as f:
+    f.write(body)
+PYEOF
+                    rm -f templates/release-notes.md.template
+                    echo "  -> docs/releases/v0.1.0.md (starter notes)"
+                fi
+            else
+                echo "  Skipped seeding v0.1.0.md. templates/release-notes.md.template stays available."
+            fi
+        fi
     else
         echo "  Skipped."
     fi
