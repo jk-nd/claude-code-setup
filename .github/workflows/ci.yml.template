@@ -159,27 +159,40 @@ jobs:
   # Aggregator job — the single overall CI signal.
   #
   # Make THIS the required status check in branch protection (bootstrap.sh
-  # configures it), not the individual Go jobs: those are path-gated and
-  # skip on non-Go PRs, and a skipped *required* check blocks the PR.
+  # configures it), not the individual jobs: the Go jobs are path-gated
+  # and skip on non-Go PRs, and a skipped *required* check blocks the PR.
   #
-  # FAIL-CLOSED: fails if any gated Go job failed or was cancelled; passes
-  # when they succeeded OR were skipped (skipped = the PR touched no
-  # Go-relevant paths, so the suite was legitimately not run). `if:
-  # always()` ensures it always runs and always reports a result.
+  # FAIL-CLOSED on two fronts:
+  #   - the `paths` filter MUST have succeeded. If it failed, the gated
+  #     jobs skip on a false "nothing relevant changed" reading, and the
+  #     aggregate would otherwise pass green with the suite silently
+  #     disabled. So a non-success `paths` result is a hard failure.
+  #   - any gated job that failed or was cancelled fails the aggregate.
+  # A gated job that was *skipped* is OK — its paths were not touched, so
+  # it was legitimately not run. `if: always()` ensures this job always
+  # runs and always reports a result.
   #
   # Adding a new gated job: add it to `needs:` and to the loop below.
   ci-pass:
     runs-on: ubuntu-latest
-    needs: [paths, build-and-test, lint]
+    needs: [paths, build-and-test, lint, actionlint]
     if: always()
     steps:
       - name: Aggregate
         run: |
+          # The paths filter is load-bearing for every skip decision
+          # below; if it did not succeed, the gating is untrustworthy.
+          echo "  paths: ${{ needs.paths.result }}"
+          if [ "${{ needs.paths.result }}" != "success" ]; then
+            echo "ci-pass: FAILED — the paths filter job did not succeed; gating is unreliable."
+            exit 1
+          fi
           failed=0
-          for job in build-and-test lint; do
+          for job in build-and-test lint actionlint; do
             case "$job" in
               build-and-test) r="${{ needs.build-and-test.result }}" ;;
               lint)           r="${{ needs.lint.result }}" ;;
+              actionlint)     r="${{ needs.actionlint.result }}" ;;
             esac
             echo "  $job: $r"
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
@@ -187,10 +200,10 @@ jobs:
             fi
           done
           if [ "$failed" -eq 1 ]; then
-            echo "ci-pass: FAILED — a Go job failed or was cancelled."
+            echo "ci-pass: FAILED — a gated job failed or was cancelled."
             exit 1
           fi
-          echo "ci-pass: OK (all Go jobs succeeded or were skipped)."
+          echo "ci-pass: OK (paths succeeded; all gated jobs passed or were skipped)."
 
   # ---------------------------------------------------------------------
   # OPTIONAL example: paths-gated job (commented out)
