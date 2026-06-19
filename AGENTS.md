@@ -230,7 +230,7 @@ Multi-part design questions are asked one at a time, interactively, each decisio
 
 ### 3. Question presentation
 
-Decision prompts surface 2–4 concrete options with tradeoffs in the option labels, plus "type something" and "chat about this" affordances. Never present a decision as a blob of prose ending with "?". The pattern matches the AskUserQuestion shape: a clear top-level question, 2–4 mutually-exclusive labeled options with one-line tradeoff descriptions.
+Decision prompts surface 2–4 concrete options with tradeoffs in the option labels, plus "type something" and "chat about this" affordances. Never present a decision as a blob of prose ending with "?". The pattern matches the AskUserQuestion shape: a clear top-level question, 2–4 mutually-exclusive labeled options with one-line tradeoff descriptions. Lead with the plain-language stakes before the technical detail — see [#30](#30-human-legibility-norm-for-read-outs-and-decision-write-ups).
 
 ### 4. Ceremony calibration per repo
 
@@ -255,6 +255,8 @@ Trigger condition for "this session is navigator" is **explicit and user-driven*
 When the orchestrator summarises a doc's decisions back to the user, the source artifact (approach doc, spec, plan-mission) is authoritative. User and navigator should cross-check the read-out against the doc before approving.
 
 Orchestrator post-summary boilerplate: "This is a summary; the source artifact at `<path>` is canonical. Re-read before approving."
+
+Read-outs also follow the human-legibility norm — plain-language stakes first, technical detail second — see [#30](#30-human-legibility-norm-for-read-outs-and-decision-write-ups).
 
 ### 8. Vendor-and-patch over upstream-PR-and-wait
 
@@ -507,3 +509,55 @@ When work is handed off across AI sessions — Cursor → Codex → navigator �
 **Orchestrator end-of-mission summary.** When `conductor` (or the orchestrator's own digest) closes out a mission, include a `Working-tree state:` line that names any open stashes and their owners. Empty state is the desired norm; non-empty state names what's there.
 
 **Failure mode this prevents.** Operator-observed on `noah-2-demo` 2026-05-15 end-of-session: three stashes across two branches from three different coordination steps over ~4 hours, all anonymous, none of them intentional carrying state. The user had to be asked to tiebreak whether each was safe to drop. Multi-AI sessions accumulate stash debt much faster than single-AI sessions; the discipline scales with the number of session boundaries crossed, not with the wall-clock duration.
+
+### 28. The orchestrator checkout is sync-only: never edit it directly
+
+The orchestrator keeps its own checkout pinned to `origin/main` — it periodically runs `git checkout main; git reset --hard origin/main; git pull` so every new worktree branches from a clean, current `main` (per [#11](#11-worktree-default-for-edit-making-subagents)). That part is correct and required.
+
+**The hazard.** `git reset --hard` silently discards **any uncommitted change to a tracked file** in the orchestrator's checkout. Only untracked *new* files survive a sync. Nothing about the routine reset warns the editor that work is about to vanish.
+
+**When it bites.** The normal flow is safe — implementers commit on worktrees and open PRs, so committed work is never at risk. The hazard only surfaces when someone edits files **directly in the orchestrator's working directory and leaves them uncommitted**, e.g. an external editor (Codex / Cursor) opened *on* the orchestrator's checkout, or the navigator making a `settings.json` / config edit and not committing it.
+
+**Rules.**
+
+1. The orchestrator's checkout is **sync-only**. Never edit files directly in it. All editing happens on a worktree/branch (per [#11](#11-worktree-default-for-edit-making-subagents)) or in a separate clone.
+2. External editors (Codex / Cursor) and any interactive human editing use a **separate clone or a dedicated worktree/branch**, never the orchestrator's main checkout.
+3. Navigator config/settings changes are **committed** through the normal PR path ([#21](#21-pr-ceremony-for-every-change)), not left as working-tree edits.
+4. Recommended: run the orchestrator in a clone **distinct** from where humans/editors operate, so co-tenancy can't happen by accident.
+
+**Recovery, when it happens anyway.** The wiped content is usually still reachable: `git fsck --unreachable` (or `--lost-found`) lists dangling blobs, recoverable with `git cat-file -p <blob>`. Editor session logs are a second source — Codex at `~/.codex/sessions/*.jsonl`, Cursor at `~/Library/Application Support/Cursor/User/History/`. Recover from the blob or the log; do not trust an editor's own "I restored it" claim without checking.
+
+**Companion to [#11](#11-worktree-default-for-edit-making-subagents) and [#16](#16-worktree-cleanup-must-respect-uncommitted-changes).** Those protect edits made *on a worktree*; this one protects against edits made in the *orchestrator's own checkout*, which has the opposite lifecycle — it is deliberately disposable and resets without warning.
+
+**Failure mode this prevents.** Operator-observed in a downstream project built from this template (`jk-nd/noah-3`): an external editor (Codex) was opened on the orchestrator's main checkout, did a substantial UI rewrite, and left it uncommitted; the orchestrator's routine reset wiped it. A navigator `settings.json` hook edit was lost the same way, unnoticed. Both were recoverable via `git fsck` dangling blobs + the editor's session logs — but it was an avoidable fire drill, and the editor wrongly believed it had restored the work.
+
+### 29. The GitHub planning surface
+
+[#22](#22-cross-repo-dependencies-signal-via-github-issues-in-the-target-repo) frames issues as the cross-repo protocol and [#23](#23-plan-mission-maintenance-is-the-orchestrators-standing-lane) makes plan-mission docs canonical, but neither describes how GitHub is used *within* a repo day-to-day — which in practice is heavily. This clarification documents the proven model so it is shared, not re-derived per repo.
+
+- **Milestones = build phases.** One milestone per `Phase N: <Name>`, sourced from the architecture doc's build-phases section. A milestone stays **open after its bulk work completes** so it can absorb follow-ups and regressions discovered later.
+- **Issues = work items, within-repo as well as cross-repo.** Plan-mission tasks, bugs, follow-ups, and tech-debt all live as issues — not only the cross-repo dependencies of [#22](#22-cross-repo-dependencies-signal-via-github-issues-in-the-target-repo). Cross-linked titles keep the trail legible: `follow-up(#N):`, `regression(#N):`, `[#N follow-up]`.
+- **Labels carry routing.** `phase-N` labels mirror the milestones for filtering; `for-orchestrator` / `for-navigator` are the multi-session pickup channel that tells each session which issues are in its lane.
+- **GitHub mirrors; plan-mission docs stay canonical.** For live running state — what is dispatched, in review, merged — the plan-mission file at `docs/plan-missions/<slug>.md` remains the source of truth ([#23](#23-plan-mission-maintenance-is-the-orchestrators-standing-lane)). GitHub is the durable, multi-session-visible *mirror*. State this explicitly so the two surfaces are not treated as co-equal and allowed to drift.
+
+The `phase-N`, `for-orchestrator`, and `for-navigator` labels are created at bootstrap alongside the existing label set (tracked separately as a `scripts/bootstrap.sh` enhancement); this clarification governs how they are *used* once present.
+
+### 30. Human-legibility norm for read-outs and decision write-ups
+
+This strengthens [#7](#7-read-outs-are-lossy-the-artifact-is-canonical) (read-outs are lossy) and [#3](#3-question-presentation) (question presentation) with a legibility requirement.
+
+Orchestrator read-outs and architect decision write-ups **lead with the plain-language stakes** — an intuition, an analogy, or "what this means / why it matters" — and only then give the technical detail. A summary that is technically correct but jargon-first, so that a human has to reverse-engineer the point, is a **defect**, not a matter of taste. It defeats the purpose of the read-out, which exists so the user can decide quickly and correctly.
+
+This applies to gate summaries, orchestrator status read-outs, the architect's `## Decisions made by architect` write-ups, and open-question framing.
+
+**Failure mode this prevents.** Operator feedback during an `nda-vertical` bootstrap session: a technically-correct orchestrator read-out "was not very understandable for a human." The information was all present; the ordering and register made it unusable at a glance.
+
+### 31. Briefing precedence: source-of-truth wins over a parts-donor
+
+A briefing sometimes names both a **parts-donor** repo ("salvage the taxonomy / scaffolding from X") and a **source-of-truth** for the actual content or criteria. When it does, precedence is explicit and non-negotiable: **the source-of-truth wins; the donor is structural/parts only.** The donor supplies skeleton, naming, and file shapes — never authority over criteria or content when the two disagree.
+
+`architect` and `spec-writer` resolve this precedence *before* reusing donor material, and record the resolution where the reuse is described, so a later reader doesn't silently re-inherit the donor's content as if it were authoritative.
+
+There is no `CLAUDE.md` template shipped today, so this guidance lives here; when a `CLAUDE.md`-authoring prompt is added to `scripts/bootstrap.sh`, it should carry the same rule.
+
+**Failure mode this prevents.** Operator-observed in an `nda-vertical` bootstrap: the briefing named a donor repo for structure and a separate criteria source (a client NDA breakdown + a gold-standard template). The donor's `CHECKLIST.md` had to be explicitly demoted — the criteria source was the authority, the donor only the skeleton — to stop the donor's checklist content leaking in as truth.
