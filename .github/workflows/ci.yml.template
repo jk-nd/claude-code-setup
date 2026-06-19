@@ -1,33 +1,31 @@
-# Replace this template's Go-specific steps with your language toolchain.
-# The job-shape (build / vet / test / lint, with cache + concurrency
-# cancellation) carries over to most stacks; only the per-language
-# `run:` lines change. Lint is pinned to a specific version so a
-# golangci-lint upstream change cannot break CI for the project.
+# =====================================================================
+# GO-SPECIFIC REFERENCE PIPELINE
+# ---------------------------------------------------------------------
+# The build / vet / test / lint steps below assume a Go project. If your
+# project is NOT Go, replace the per-language `run:` lines (and the
+# `setup-go` / golangci-lint steps) with your stack's equivalents —
+# e.g. pytest + ruff for Python, `opa test` for Rego. The job-shape
+# (paths-filter → gated jobs → fail-closed `ci-pass` aggregator, with
+# cache + concurrency cancellation) carries over to any stack unchanged;
+# only the language steps differ. `bootstrap.sh` activates this file as
+# `ci.yml` only for Go projects; for other stacks it is left as a
+# clearly-marked reference for you to adapt.
+# =====================================================================
 
 name: CI
 
 on:
+  # No workflow-level `paths-ignore`: the `ci-pass` aggregator below is
+  # the single required status check, and a required check that is
+  # skipped by path filtering stays "pending" forever, blocking the PR.
+  # Doc-only / metadata-only PRs are handled instead at the job level —
+  # the `paths` job detects no Go changes, the Go jobs skip, and
+  # `ci-pass` still runs and passes. Same Actions-minutes saving, no
+  # merge deadlock.
   pull_request:
     branches: [main]
-    # Skip the workflow entirely for doc-only / metadata-only PRs.
-    # The build/test gates here add no signal for these changes; on a
-    # busy day the savings on free-tier Actions minutes are real.
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE.md'
-      - 'LICENSE'
-      - 'CHANGELOG.md'
   push:
     branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/PULL_REQUEST_TEMPLATE.md'
-      - 'LICENSE'
-      - 'CHANGELOG.md'
   # GitHub merge queue — re-runs build/test/lint against the queued PR
   # rebased onto post-previous-merge `main` before letting the merge land.
   # Eliminates the merge-cascade collision pattern where two PRs that pass
@@ -82,14 +80,16 @@ jobs:
         with:
           filters: |
             go:
-              - '**.go'
-              - 'go.mod'
-              - 'go.sum'
+              - '**/*.go'
+              - '**/go.mod'
+              - '**/go.sum'
             workflows:
               - '.github/workflows/**'
 
   build-and-test:
     runs-on: ubuntu-latest
+    needs: paths
+    if: needs.paths.outputs.go == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -115,6 +115,8 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    needs: paths
+    if: needs.paths.outputs.go == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -153,6 +155,42 @@ jobs:
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.7
       - name: Run actionlint
         run: ./actionlint -color
+
+  # Aggregator job — the single overall CI signal.
+  #
+  # Make THIS the required status check in branch protection (bootstrap.sh
+  # configures it), not the individual Go jobs: those are path-gated and
+  # skip on non-Go PRs, and a skipped *required* check blocks the PR.
+  #
+  # FAIL-CLOSED: fails if any gated Go job failed or was cancelled; passes
+  # when they succeeded OR were skipped (skipped = the PR touched no
+  # Go-relevant paths, so the suite was legitimately not run). `if:
+  # always()` ensures it always runs and always reports a result.
+  #
+  # Adding a new gated job: add it to `needs:` and to the loop below.
+  ci-pass:
+    runs-on: ubuntu-latest
+    needs: [paths, build-and-test, lint]
+    if: always()
+    steps:
+      - name: Aggregate
+        run: |
+          failed=0
+          for job in build-and-test lint; do
+            case "$job" in
+              build-and-test) r="${{ needs.build-and-test.result }}" ;;
+              lint)           r="${{ needs.lint.result }}" ;;
+            esac
+            echo "  $job: $r"
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              failed=1
+            fi
+          done
+          if [ "$failed" -eq 1 ]; then
+            echo "ci-pass: FAILED — a Go job failed or was cancelled."
+            exit 1
+          fi
+          echo "ci-pass: OK (all Go jobs succeeded or were skipped)."
 
   # ---------------------------------------------------------------------
   # OPTIONAL example: paths-gated job (commented out)

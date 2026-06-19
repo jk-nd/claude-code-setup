@@ -4,28 +4,33 @@
 #
 # What it does:
 #   1. Detect owner + name from `gh repo view`.
-#   2. Prompt for the comma-separated WATCHED_PATHS (compliance-sensitive
-#      paths). Suggests the v3 default infrastructure paths
-#      (.github/workflows/, go.mod, go.sum, .github/CODEOWNERS) plus any
-#      project-specific compliance paths.
-#   3. Prompt for ceremony_level (foundation | demo | iterate-fast).
-#   4. Substitute ${OWNER}, ${REPO}, ${WATCHED_PATHS},
-#      ${WATCHED_PATHS_AS_CODEOWNER_LINES}, ${REPO}, ${CEREMONY_LEVEL}
-#      placeholders across the always-rename *.template files
-#      (ci.yml, CODEOWNERS) and the new template files.
-#   5. Rename always-renamed *.template -> their non-template name.
+#   2. Prompt for the primary stack (go | python | rego | other). This
+#      drives language-aware defaults: whether the Go CI is activated,
+#      the WATCHED_PATHS default, and the required branch-protection check.
+#   3. Prompt for the comma-separated WATCHED_PATHS (compliance-sensitive
+#      paths). The default includes infrastructure paths plus, for Go,
+#      the dependency manifests (go.mod, go.sum); non-Go stacks omit them.
+#   4. Prompt for ceremony_level (foundation | demo | iterate-fast).
+#   5. Substitute ${OWNER}, ${REPO}, ${WATCHED_PATHS},
+#      ${WATCHED_PATHS_AS_CODEOWNER_LINES}, ${CEREMONY_LEVEL} placeholders
+#      and rename the always-renamed *.template files (CODEOWNERS). The Go
+#      ci.yml.template is activated as ci.yml only for Go projects; for
+#      other stacks it is left in place as a marked reference stub.
 #   6. Prompt-rename the opt-in *.template files: dependabot, govulncheck,
 #      nightly, docs-audit, .claude/settings.json, dependabot-automerge,
 #      dependabot-rebase-stale, main-broken-sentinel, release,
 #      smoke-test playbook.
 #   7. Create labels: compliance-review, doc-stale, coverage-skip,
 #      automerge, dependabot:major-review-needed, main-broken,
-#      dependencies.
-#   8. Optionally install the strict-recipe pre-push git hook.
-#   9. Optionally configure branch protection on `main` with a
+#      dependencies, watched-path, for-orchestrator, for-navigator,
+#      audit, tech-debt. (Descriptions are capped at GitHub's 100-char
+#      limit.)
+#   8. Optionally scaffold 'Phase N' build milestones + phase-N labels.
+#   9. Optionally install the strict-recipe pre-push git hook.
+#  10. Optionally configure branch protection on `main` with a
 #      maintainer-identity allowlist (solo-author = merger stays
 #      unblocked; bot/agent identities trigger non-author approval).
-#  10. Optionally enable GitHub merge queue on `main` via gh graphql.
+#  11. Optionally enable GitHub merge queue on `main` via gh graphql.
 #
 # Safe to re-run; only re-applies steps whose underlying state changed.
 
@@ -196,11 +201,30 @@ create_label() {
     local color="$2"
     local description="$3"
 
+    # GitHub rejects label descriptions longer than 100 chars with HTTP
+    # 422. Cap defensively so a long description degrades to a truncated
+    # one instead of a hard failure.
+    if [ "${#description}" -gt 100 ]; then
+        description="${description:0:100}"
+    fi
+
     echo "Creating '$name' label..."
     if gh api -X POST "/repos/$OWNER/$REPO/labels" \
         -f name="$name" \
         -f color="$color" \
         -f description="$description" >/dev/null 2>&1; then
+        echo "  ok"
+    else
+        echo "  already exists (or could not be created — check repo permissions)"
+    fi
+}
+
+create_milestone() {
+    local title="$1"
+
+    echo "Creating milestone '$title'..."
+    if gh api -X POST "/repos/$OWNER/$REPO/milestones" \
+        -f title="$title" >/dev/null 2>&1; then
         echo "  ok"
     else
         echo "  already exists (or could not be created — check repo permissions)"
@@ -238,18 +262,37 @@ if [ -z "$OWNER" ] || [ -z "$REPO" ]; then
 fi
 
 echo
+echo "Primary language / stack. This sets language-aware defaults: which CI"
+echo "pipeline is activated, the watched-paths default, and the required"
+echo "branch-protection check."
+echo "  go     — activate the Go CI pipeline; Go watched paths (turnkey)."
+echo "  python — Python project; Go CI left as a reference stub to replace."
+echo "  rego   — OPA/Rego policy project; Go CI left as a reference stub."
+echo "  other  — any other stack; Go CI left as a reference stub."
+echo
+STACK=$(prompt_choice "Pick the primary stack" "go" "go" "python" "rego" "other")
+
+echo
 echo "WATCHED_PATHS configure both:"
 echo "  - the trust-boundary CI gate (.github/workflows/trust-boundary.yml)"
 echo "  - CODEOWNERS routing (.github/CODEOWNERS)"
 echo
-echo "v3 defaults to include infrastructure paths so the orchestrator cannot"
-echo "auto-merge changes to workflows, dependencies, or codeowners themselves:"
-echo "  .github/workflows/, go.mod, go.sum, .github/CODEOWNERS"
+echo "The default includes infrastructure paths so the orchestrator cannot"
+echo "auto-merge changes to workflows or codeowners themselves. For Go"
+echo "projects it also includes the dependency manifests (go.mod, go.sum);"
+echo "for other stacks those are dropped (add your own manifest below)."
 echo
+# Language-aware default: Go pins the dependency manifests; other stacks
+# start without them so a non-Go repo isn't told go.mod/go.sum are
+# compliance-sensitive when they don't exist.
+if [ "$STACK" = "go" ]; then
+    DEFAULT_WATCHED=".github/workflows/,go.mod,go.sum,.github/CODEOWNERS"
+else
+    DEFAULT_WATCHED=".github/workflows/,.github/CODEOWNERS"
+fi
 echo "Add your project's compliance-sensitive paths after the comma, e.g.:"
-echo "  .github/workflows/,go.mod,go.sum,.github/CODEOWNERS,internal/policy/,internal/auth/"
+echo "  ${DEFAULT_WATCHED},internal/policy/,internal/auth/"
 echo
-DEFAULT_WATCHED=".github/workflows/,go.mod,go.sum,.github/CODEOWNERS"
 WATCHED_PATHS=$(prompt_default "Watched paths" "$DEFAULT_WATCHED")
 
 echo
@@ -304,7 +347,6 @@ fi
 echo "Substituting placeholders + renaming always-renamed *.template files..."
 
 ALWAYS_RENAME_TEMPLATES=(
-    ".github/workflows/ci.yml.template"
     ".github/CODEOWNERS.template"
 )
 
@@ -315,6 +357,22 @@ for src in "${ALWAYS_RENAME_TEMPLATES[@]}"; do
     dst="${src%.template}"
     rename_template "$src" "$dst"
 done
+
+# CI pipeline: the template ships a Go reference pipeline. Activate it as
+# ci.yml only for Go projects. For other stacks, leave the *.template in
+# place (only *.yml files run, so it stays inert) with its banner, so a
+# non-Go repo never silently ships a Go pipeline as if it were its own.
+if [ -f ".github/workflows/ci.yml.template" ]; then
+    if [ "$STACK" = "go" ]; then
+        rename_template ".github/workflows/ci.yml.template" ".github/workflows/ci.yml"
+    else
+        echo "  .github/workflows/ci.yml.template LEFT AS A REFERENCE STUB (stack: $STACK)."
+        echo "    It is a Go pipeline and is NOT active (only *.yml runs). Replace its"
+        echo "    build/test/lint steps with your $STACK toolchain, then rename it to"
+        echo "    .github/workflows/ci.yml. The job-shape (paths-filter -> gated jobs ->"
+        echo "    ci-pass aggregator) carries over unchanged."
+    fi
+fi
 
 # -----------------------------------------------------------------
 # Opt-in *.template renames
@@ -483,12 +541,42 @@ create_label "automerge"                      "0e8a16" "Dependabot patch/minor P
 create_label "dependabot:major-review-needed" "d93f0b" "Dependabot major bump — human review required"
 create_label "main-broken"                    "b60205" "Post-merge sentinel detected main fails quick verify; merge cascade likely"
 create_label "dependencies"                   "0e8a16" "Tracks a cross-repo dependency surfaced by another repo's orchestrator (per AGENTS.md)"
+create_label "watched-path"                   "5319e7" "Touches a compliance-sensitive watched path; trust-boundary gate applies"
+create_label "for-orchestrator"               "1d76db" "In the orchestrator session's lane (multi-session pickup channel)"
+create_label "for-navigator"                  "c5def5" "In the navigator session's lane (multi-session pickup channel)"
+create_label "audit"                          "d4c5f9" "Surfaced by an audit (docs, security, coverage) for follow-up"
+create_label "tech-debt"                       "e99695" "Known shortcut or deferred cleanup to revisit"
+
+# -----------------------------------------------------------------
+# Build-phase milestones (optional)
+# -----------------------------------------------------------------
+
+echo
+echo "Build-phase milestones mirror the architecture doc's build phases."
+echo "This creates 'Phase N' milestones plus matching phase-N labels the"
+echo "orchestrator filters on. You can rename or add more later. 0 to skip."
+PHASE_COUNT=$(prompt_default "Number of build phases to scaffold" "0")
+if [[ "$PHASE_COUNT" =~ ^[0-9]+$ ]] && [ "$PHASE_COUNT" -gt 0 ]; then
+    phase_i=1
+    while [ "$phase_i" -le "$PHASE_COUNT" ]; do
+        create_milestone "Phase $phase_i"
+        create_label "phase-$phase_i" "ededed" "Work in build Phase $phase_i (mirrors the 'Phase $phase_i' milestone)"
+        phase_i=$((phase_i + 1))
+    done
+else
+    echo "  Skipped milestone scaffolding."
+fi
 
 # -----------------------------------------------------------------
 # Pre-push hook (optional)
 # -----------------------------------------------------------------
 
 echo
+if [ "$STACK" != "go" ]; then
+    echo "Note: the pre-push hook recipe is Go-specific (build + vet + test +"
+    echo "go mod tidy). For a $STACK project, adapt scripts/install-pre-push-hook.sh"
+    echo "to your toolchain before installing it."
+fi
 if prompt_yn "Install strict-recipe pre-push git hook (recommended for agent-driven workflows)?" "n"; then
     if [ -x "$REPO_ROOT/scripts/install-pre-push-hook.sh" ]; then
         "$REPO_ROOT/scripts/install-pre-push-hook.sh"
@@ -514,6 +602,20 @@ if prompt_yn "Configure initial branch protection on 'main'?" "n"; then
     DEFAULT_BOT_ALLOWLIST="dependabot[bot],cursor[bot],github-actions[bot]"
     BOT_ALLOWLIST=$(prompt_default "Bot/agent identity allowlist" "$DEFAULT_BOT_ALLOWLIST")
 
+    # Required status checks are language-aware. The Go jobs (build-and-
+    # test, lint) are path-gated and skip on non-Go PRs, so they cannot be
+    # required directly — a skipped *required* check leaves the PR pending
+    # forever. Go projects require the fail-closed `ci-pass` aggregator
+    # instead; other stacks require only the trust-boundary gate until
+    # their own pipeline exists.
+    if [ "$STACK" = "go" ]; then
+        REQUIRED_CONTEXTS='"ci-pass", "trust-boundary-gate"'
+    else
+        REQUIRED_CONTEXTS='"trust-boundary-gate"'
+        echo "  Stack is $STACK: required checks set to trust-boundary-gate only."
+        echo "  Add your CI's overall check to branch protection once it exists."
+    fi
+
     echo "Creating branch protection on main..."
     # The native branches-protection API does not support author-identity
     # conditional approval directly; that's a Rulesets capability. The
@@ -527,7 +629,7 @@ if prompt_yn "Configure initial branch protection on 'main'?" "n"; then
 {
   "required_status_checks": {
     "strict": true,
-    "contexts": ["build-and-test", "lint", "trust-boundary-gate"]
+    "contexts": [${REQUIRED_CONTEXTS}]
   },
   "enforce_admins": false,
   "required_pull_request_reviews": {
@@ -592,15 +694,22 @@ fi
 # Footer
 # -----------------------------------------------------------------
 
+if [ "$STACK" = "go" ]; then
+    CI_NEXT_STEP="Review .github/workflows/ci.yml (Go pipeline, active for this repo)."
+else
+    CI_NEXT_STEP="Replace the Go reference .github/workflows/ci.yml.template with your ${STACK} pipeline, then rename it to ci.yml. The job-shape carries over."
+fi
+
 cat <<EOF
 
 Bootstrap complete.
 
+Stack: $STACK
+
 Next steps:
   1. Set GOOGLE_AI_STUDIO_API_KEY in your shell env (free key at
      https://aistudio.google.com). The plan-reviewer subagent uses it.
-  2. Replace the Go-flavoured CI (.github/workflows/ci.yml) with one for
-     your stack. The job-shape and concurrency block carry over.
+  2. $CI_NEXT_STEP
   3. Edit .github/CODEOWNERS to reference real team handles once they
      exist in your org.
   4. Start the orchestrator: cd <repo> && claude.
