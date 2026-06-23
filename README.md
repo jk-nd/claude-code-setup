@@ -112,7 +112,8 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference, [`docs/ope
 | `.claude/agents/*.md` | The 9 subagent definitions (project-scoped). |
 | `.claude/skills/*/SKILL.md` | Reusable how-to skills the orchestrator invokes on demand: `ci-watch`, `prune-worktrees`, `domain-adversary-checklist`. See `docs/skills.md`. |
 | `.claude/invariants/*.md` | Project-owned must-hold checklists the `domain-adversary-checklist` skill runs the `adversary` agent against. Ships an example. |
-| `templates/claude-settings.json.template` | Curated permissions allowlist with v3 Bash auto-allowlist (git, go, make, second-opinion.py). Bootstrap copies to `.claude/settings.json`. |
+| `.claude/hooks/*.sh` | Lifecycle + guard hooks that make load-bearing operating rules executable (session memory persistence, safety gates). See `docs/hooks.md`. |
+| `templates/claude-settings.json.template` | Curated permissions allowlist + lifecycle/guard hook wiring. Bootstrap copies to `.claude/settings.json`. |
 | `templates/smoke-test-playbook.md.template` | (Opt-in) Starter shape for a versioned UI smoke-test manual. |
 | `scripts/second-opinion.py` | Calls Gemini (AI Studio free tier) or Opus (via local `claude --print`) for plan critiques. |
 | `scripts/install-pre-push-hook.sh` | Standalone installer for the strict pre-push hook. |
@@ -122,6 +123,7 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference, [`docs/ope
 | `docs/operating.md` | Day-to-day operating recipes (merge-cascade, parallel tracks, recovery patterns). |
 | `docs/agentic-review.md` | `adversary` review dimensions + opt-in CI-side LLM review notes. |
 | `docs/skills.md` | The skills layer: agents-vs-skills, when to author a skill, and the built-in skills to use first. |
+| `docs/hooks.md` | The hooks layer: lifecycle + guard hooks and the hook contract. |
 | `.github/workflows/ci.yml.template` | Go-flavoured CI example with paths-filter, actionlint gate, merge-queue trigger. Replace per-language. |
 | `.github/workflows/trust-boundary.yml` | Compliance gate keyed off watched paths + label / approval, with merge-queue trigger. |
 | `.github/workflows/docs-audit.yml.template` | (Opt-in) Weekly cron opens a `doc-stale` audit issue for the orchestrator. |

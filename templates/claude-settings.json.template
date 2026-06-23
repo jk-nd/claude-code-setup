@@ -77,6 +77,10 @@
       "Bash(.claude/skills/*/*.sh *)",
       "Bash(bash .claude/skills/*/*.sh)",
       "Bash(bash .claude/skills/*/*.sh *)",
+      "Bash(.claude/hooks/*.sh)",
+      "Bash(.claude/hooks/*.sh *)",
+      "Bash(bash .claude/hooks/*.sh)",
+      "Bash(bash .claude/hooks/*.sh *)",
 
       "Bash(curl -s *)",
       "Bash(curl -sS *)",
@@ -125,6 +129,17 @@
       "Bash(gh repo delete *)",
       "Bash(git push --force *)",
       "Bash(git push -f *)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "bash .claude/hooks/session-start.sh" } ] }
+    ],
+    "PreCompact": [
+      { "hooks": [ { "type": "command", "command": "bash .claude/hooks/pre-compact.sh" } ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "bash .claude/hooks/session-end.sh" } ] }
     ]
   }
 }
