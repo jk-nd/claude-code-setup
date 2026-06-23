@@ -16,6 +16,7 @@ authority.
 | `/cut-release [vX.Y.Z]` | The clarification #25 release flow: in-tree notes → release PR → tag → GitHub Release object. |
 | `/digest` | Dispatches `conductor` for a morning digest from plan-mission state + git activity. |
 | `/gate-status` | Reports what's waiting on a user decision vs. progressing in the background. |
+| `/adr [decision]` | Captures an architectural-shape decision as a numbered ADR under `docs/adr/` (see [`docs/adr/`](adr/)). |
 
 ## Commands vs. agents vs. skills
 

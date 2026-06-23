@@ -113,7 +113,7 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference, [`docs/ope
 | `.claude/skills/*/SKILL.md` | Reusable how-to skills the orchestrator invokes on demand: `ci-watch`, `prune-worktrees`, `domain-adversary-checklist`. See `docs/skills.md`. |
 | `.claude/invariants/*.md` | Project-owned must-hold checklists the `domain-adversary-checklist` skill runs the `adversary` agent against. Ships an example. |
 | `.claude/hooks/*.sh` | Lifecycle + guard hooks that make load-bearing operating rules executable (session memory persistence, safety gates). See `docs/hooks.md`. |
-| `.claude/commands/*.md` | Slash-commands that invoke the operating loop: `/ship`, `/fix-defect`, `/cut-release`, `/digest`, `/gate-status`. See `docs/commands.md`. |
+| `.claude/commands/*.md` | Slash-commands that invoke the operating loop: `/ship`, `/fix-defect`, `/cut-release`, `/digest`, `/gate-status`, `/adr`. See `docs/commands.md`. |
 | `templates/claude-settings.json.template` | Curated permissions allowlist + lifecycle/guard hook wiring. Bootstrap copies to `.claude/settings.json`. |
 | `templates/smoke-test-playbook.md.template` | (Opt-in) Starter shape for a versioned UI smoke-test manual. |
 | `scripts/second-opinion.py` | Calls Gemini (AI Studio free tier) or Opus (via local `claude --print`) for plan critiques. |
@@ -130,6 +130,7 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference, [`docs/ope
 | `docs/hooks.md` | The hooks layer: lifecycle + guard hooks and the hook contract. |
 | `docs/guard-hooks.md` | (Opt-in) `PreToolUse` guards: config-protection, safety-guard, investigate-before-edit. |
 | `docs/commands.md` | The command layer: invocable entry points to the operating loop. |
+| `docs/adr/` | Architecture Decision Records: template + convention for shape decisions. |
 | `.github/workflows/ci.yml.template` | Go-flavoured CI example with paths-filter, actionlint gate, merge-queue trigger. Replace per-language. |
 | `.github/workflows/validate.yml` | Active, language-agnostic self-validation of the harness surface (runs `scripts/validate.py`). |
 | `.github/workflows/trust-boundary.yml` | Compliance gate keyed off watched paths + label / approval, with merge-queue trigger. |
