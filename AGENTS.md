@@ -582,3 +582,11 @@ The agent team reads content the project does not control — git diffs, issue a
 - **`adversary` owns the check on diffs.** When a diff introduces text that itself looks like an injection payload (e.g. a prompt template, a fetched-content handler, a system-prompt string), `adversary` flags whether the code treats external content as data — an unguarded "instructions from fetched content" path is a failing finding.
 
 Each agent that consumes external content carries a one-line version of this baseline in its own definition; this clarification is the source of truth.
+
+### 34. Calibration entries are structured and promote on recurrence
+
+The calibration log (`docs/research/agent-team-calibration.md`, [#20](#20-calibration-log-as-a-default-template-file)) records each drift incident as a **structured** entry — a **confidence** (0.3–0.9), a **scope** (`project` / `global`), and a **domain** tag — so patterns can be *counted*, not just read.
+
+**Promotion rule.** A `global`-scope pattern at **confidence ≥ 0.7** seen in **≥ 2 entries** (here or across repos) becomes an upstream amendment candidate: file an issue on the template repo describing the change, per [#22](#22-cross-repo-dependencies-signal-via-github-issues-in-the-target-repo). `project`-scope patterns stay local.
+
+`scripts/calibration-add.py` appends a well-formed entry; the optional `SessionEnd` hook ([`docs/hooks.md`](docs/hooks.md)) can draft candidates from a session for the orchestrator to confirm. This is the structured successor to [#20](#20-calibration-log-as-a-default-template-file).

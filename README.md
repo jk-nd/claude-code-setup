@@ -120,6 +120,7 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference, [`docs/ope
 | `scripts/install-pre-push-hook.sh` | Standalone installer for the strict pre-push hook. |
 | `scripts/validate.py` | Self-validation of the harness surface (frontmatter, anchors, leaked paths, invisible unicode). Run by `validate.yml`. |
 | `scripts/context-budget.py` | Audit of approximate context consumed by the harness surface (agents/skills/rules/docs); flags bloat. |
+| `scripts/calibration-add.py` | Append a structured (confidence/scope/domain) entry to the calibration log. |
 | `docs/templates/plan-mission.md` | Living-artifact format `planner` writes from. |
 | `docs/research/agent-team-calibration.md` | Orchestrator's drift log; entries propagate as v3+ amendment candidates. |
 | `docs/setup.md` | Operator's reference for everything bootstrap configures + manual steps. |
