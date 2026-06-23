@@ -561,3 +561,11 @@ A briefing sometimes names both a **parts-donor** repo ("salvage the taxonomy / 
 There is no `CLAUDE.md` template shipped today, so this guidance lives here; when a `CLAUDE.md`-authoring prompt is added to `scripts/bootstrap.sh`, it should carry the same rule.
 
 **Failure mode this prevents.** Operator-observed in an `nda-vertical` bootstrap: the briefing named a donor repo for structure and a separate criteria source (a client NDA breakdown + a gold-standard template). The donor's `CHECKLIST.md` had to be explicitly demoted — the criteria source was the authority, the donor only the skeleton — to stop the donor's checklist content leaking in as truth.
+
+### 32. Skills: prefer an invocable skill over re-deriving a procedure
+
+The template ships a `.claude/skills/` layer (see [`docs/skills.md`](docs/skills.md)) alongside `.claude/agents/`. **Agents are roles; skills are how-to procedures** for recurring, easy-to-get-wrong tasks. When such a task has a known-right way that would otherwise be re-improvised each session — watching CI to a correct pass/fail (`ci-watch`), pruning agent worktrees safely (`prune-worktrees`), running `adversary` against a project's invariants (`domain-adversary-checklist`) — the orchestrator invokes the matching skill instead of re-deriving the steps.
+
+**Built-ins first.** Claude Code's built-in skills (`code-review` / `code-review ultra`, `verify`, `deep-research`) come before any custom skill. Author a custom skill only when no built-in covers the task *and* the task is recurring **and** easy-to-get-wrong **and** currently a re-derived gotcha.
+
+This is the procedural complement to [#12](#12-default-to-subagent-dispatch-over-direct-orchestrator-work): #12 routes *role* work to the owning agent; this routes *recurring-procedure* work to the owning skill. A skill may itself dispatch an agent (e.g. `domain-adversary-checklist` dispatches `adversary`), so the two layers compose rather than overlap.

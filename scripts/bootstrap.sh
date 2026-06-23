@@ -716,5 +716,9 @@ Next steps:
   5. Tell it what to build. Approve at the four gates: approach, spec,
      plan-mission, compliance-routed PRs.
 
+Reusable skills ship in .claude/skills/ (ci-watch, prune-worktrees,
+domain-adversary-checklist) — see docs/skills.md. Built-in skills
+(code-review, verify, deep-research) are available too.
+
 Re-running this script is safe — it is idempotent.
 EOF
