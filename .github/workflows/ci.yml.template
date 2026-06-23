@@ -58,7 +58,7 @@ jobs:
   # fuzz, oscal-check, translator-roundtrip, etc.) can opt in by
   # consuming `needs.paths.outputs.<filter-name>` in a job-level `if:`.
   #
-  # Cost model: this job runs `dorny/paths-filter@v3` once per PR push.
+  # Cost model: this job runs `dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3` once per PR push.
   # Single ubuntu-latest, only checkout + the filter action — no Go,
   # no build. The cost added here is paid back many-fold once even one
   # downstream job is gated on it.
@@ -74,8 +74,8 @@ jobs:
       go: ${{ steps.f.outputs.go }}
       workflows: ${{ steps.f.outputs.workflows }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
         id: f
         with:
           filters: |
@@ -91,10 +91,10 @@ jobs:
     needs: paths
     if: needs.paths.outputs.go == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26'
           cache: true
@@ -118,15 +118,15 @@ jobs:
     needs: paths
     if: needs.paths.outputs.go == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.26'
           cache: true
 
-      - uses: golangci/golangci-lint-action@v7
+      - uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7
         with:
           version: v2.11.4
           args: --timeout=5m
@@ -147,14 +147,20 @@ jobs:
     needs: paths
     if: needs.paths.outputs.workflows == 'true'
     steps:
-      - uses: actions/checkout@v4
-      - name: Install actionlint
-        run: |
-          # Pin a known-good release via the official installer script.
-          # The script lands the binary as ./actionlint in the cwd.
-          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.7
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Run actionlint
-        run: ./actionlint -color
+        env:
+          ACTIONLINT_VERSION: 1.7.7
+        run: |
+          # Supply-chain policy (see SECURITY.md): no `curl | bash` of a
+          # remote script. Download the pinned release artifact and verify
+          # it against the release's published checksums before running.
+          base="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
+          curl -sSfL -o actionlint.tar.gz "${base}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -sSfL -o actionlint_checksums.txt "${base}/actionlint_${ACTIONLINT_VERSION}_checksums.txt"
+          grep " actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz$" actionlint_checksums.txt | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+          ./actionlint -color
 
   # Aggregator job — the single overall CI signal.
   #
@@ -223,9 +229,9 @@ jobs:
   #   needs: [build-and-test, paths]
   #   if: needs.paths.outputs.e2e == 'true'
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
   #     - name: Set up Go
-  #       uses: actions/setup-go@v5
+  #       uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
   #       with:
   #         go-version: '1.26'
   #         cache: true
@@ -247,9 +253,9 @@ jobs:
   #   if: github.event_name == 'pull_request'
   #   needs: build-and-test
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
   #     - name: Set up Go
-  #       uses: actions/setup-go@v5
+  #       uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
   #       with:
   #         go-version: '1.26'
   #         cache: true
@@ -265,7 +271,7 @@ jobs:
   #       run: /tmp/coverage-gate --baseline=ops/coverage-baseline.json --profile=cov.out
   #     - name: Upload coverage profile
   #       if: always()
-  #       uses: actions/upload-artifact@v4
+  #       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
   #       with:
   #         name: coverage-profile
   #         path: cov.out

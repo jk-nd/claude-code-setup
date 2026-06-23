@@ -63,7 +63,7 @@ jobs:
     steps:
       - name: Compute compliance-sensitive paths touched
         id: paths
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const owner = context.repo.owner;
@@ -105,7 +105,7 @@ jobs:
       - name: Check for compliance-review label or approval
         id: gate
         if: steps.paths.outputs.hit_count != '0'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           PR_NUMBER:   ${{ steps.paths.outputs.pr_number }}
           PR_HEAD_SHA: ${{ steps.paths.outputs.pr_head_sha }}
@@ -140,7 +140,7 @@ jobs:
 
       - name: Post or update sticky summary comment
         if: steps.paths.outputs.hit_count != '0'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           HITS_JSON:        ${{ steps.paths.outputs.hits_json }}
           PR_NUMBER:        ${{ steps.paths.outputs.pr_number }}
