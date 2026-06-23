@@ -391,6 +391,44 @@ if [ -f "templates/claude-settings.json.template" ]; then
     fi
 fi
 
+# Guard hooks (PreToolUse) — opt-in. Block edits to quality-gate configs and
+# catastrophic Bash commands at runtime. Requires .claude/settings.json above.
+if [ -f ".claude/settings.json" ]; then
+    if prompt_yn "Enable guard hooks (config-protection + safety-guard PreToolUse gates)?" "n"; then
+        INVESTIGATE="false"
+        if prompt_yn "  Also enable the experimental investigate-before-edit gate (adds one round-trip per new file)?" "n"; then
+            INVESTIGATE="true"
+        fi
+        INVESTIGATE="$INVESTIGATE" python3 - ".claude/settings.json" <<'PYEOF'
+import json, os, sys
+path = sys.argv[1]
+investigate = os.environ.get("INVESTIGATE") == "true"
+with open(path) as f:
+    cfg = json.load(f)
+pre = cfg.setdefault("hooks", {}).setdefault("PreToolUse", [])
+
+def has(cmd):
+    return any(any(h.get("command") == cmd for h in g.get("hooks", [])) for g in pre)
+
+def add(matcher, cmd):
+    if not has(cmd):
+        pre.append({"matcher": matcher, "hooks": [{"type": "command", "command": cmd}]})
+
+add("Edit|Write|MultiEdit", "bash .claude/hooks/config-protection.sh")
+add("Bash", "bash .claude/hooks/safety-guard.sh")
+if investigate:
+    add("Edit|Write|MultiEdit", "bash .claude/hooks/investigate-before-edit.sh")
+
+with open(path, "w") as f:
+    json.dump(cfg, f, indent=2)
+    f.write("\n")
+PYEOF
+        echo "  Guard hooks wired into .claude/settings.json PreToolUse."
+    else
+        echo "  Skipped. See docs/guard-hooks.md to enable later."
+    fi
+fi
+
 # docs-audit — weekly cron opens a doc-stale audit issue for the orchestrator.
 if [ -f ".github/workflows/docs-audit.yml.template" ]; then
     if prompt_yn "Enable weekly docs-audit workflow (opens a doc-stale issue every Monday)?" "y"; then

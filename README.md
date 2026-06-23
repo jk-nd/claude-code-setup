@@ -124,6 +124,7 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference, [`docs/ope
 | `docs/agentic-review.md` | `adversary` review dimensions + opt-in CI-side LLM review notes. |
 | `docs/skills.md` | The skills layer: agents-vs-skills, when to author a skill, and the built-in skills to use first. |
 | `docs/hooks.md` | The hooks layer: lifecycle + guard hooks and the hook contract. |
+| `docs/guard-hooks.md` | (Opt-in) `PreToolUse` guards: config-protection, safety-guard, investigate-before-edit. |
 | `.github/workflows/ci.yml.template` | Go-flavoured CI example with paths-filter, actionlint gate, merge-queue trigger. Replace per-language. |
 | `.github/workflows/trust-boundary.yml` | Compliance gate keyed off watched paths + label / approval, with merge-queue trigger. |
 | `.github/workflows/docs-audit.yml.template` | (Opt-in) Weekly cron opens a `doc-stale` audit issue for the orchestrator. |
