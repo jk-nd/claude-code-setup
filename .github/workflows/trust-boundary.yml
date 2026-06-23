@@ -3,14 +3,13 @@ name: Trust-boundary gate
 # Compliance gate for PRs that touch trust-boundary surfaces.
 #
 # Customise this workflow at template-instantiation time:
-#   1. Replace the `paths:` list under `on.pull_request` with the path
-#      globs that should trip the gate in your project. The list below
-#      shows ${WATCHED_PATHS} as a placeholder; the bootstrap script
-#      substitutes it with the project-specific globs you supply.
-#   2. Update the `watched` array inside the `Compute compliance-sensitive
-#      paths touched` step to match — it is the source of truth for the
-#      sticky-comment summary, paired with human-readable area labels.
-#   3. Replace the `${FRAMEWORKS}` placeholder list inside the sticky-
+#   1. Edit the `watched` array inside the `Compute compliance-sensitive
+#      paths touched` step with the path globs that should trip the gate
+#      in your project, paired with human-readable area labels. This array
+#      is the single source of truth for both enforcement and the
+#      sticky-comment summary. (There is deliberately no workflow-level
+#      `paths:` filter — see the note on `on:` below.)
+#   2. Replace the `${FRAMEWORKS}` placeholder list inside the sticky-
 #      comment template with the compliance frameworks relevant to your
 #      project (e.g. ISO 27001, SOC 2, GDPR, EU AI Act, NIST 800-53,
 #      HIPAA, PCI-DSS), or remove the framework section entirely if your
@@ -32,16 +31,16 @@ name: Trust-boundary gate
 # bootstrap script offers to do this for you.
 
 on:
+  # No workflow-level `paths:` filter, deliberately. This gate is wired
+  # into branch protection as a REQUIRED check (bootstrap.sh offers this),
+  # and a required check that never runs — because the PR touched no
+  # watched path — stays "pending" forever and blocks the merge. So the
+  # workflow runs on every PR and the job below self-determines: it
+  # computes which watched paths were touched and passes cleanly when none
+  # were (see the "No watched paths touched" step). The watched-path globs
+  # live in the in-job `watched` array, which is the single source of truth.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
-    paths:
-      # ${WATCHED_PATHS} — replace with project-specific globs.
-      # Example shape (uncomment / edit to match your project):
-      # - 'internal/policy/**'
-      # - 'internal/audit/**'
-      # - 'internal/auth/**'
-      # - 'docs/design/**'
-      - 'PLACEHOLDER_DELETE_ME/**'
   pull_request_review:
     types: [submitted, edited, dismissed]
   # GitHub merge queue — when this workflow is wired into branch
