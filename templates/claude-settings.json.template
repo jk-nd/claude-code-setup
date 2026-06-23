@@ -73,8 +73,10 @@
       "Bash(./scripts/second-opinion.py *)",
       "Bash(python3 scripts/second-opinion.py *)",
 
-      "Bash(.claude/skills/*)",
-      "Bash(bash .claude/skills/*)",
+      "Bash(.claude/skills/*/*.sh)",
+      "Bash(.claude/skills/*/*.sh *)",
+      "Bash(bash .claude/skills/*/*.sh)",
+      "Bash(bash .claude/skills/*/*.sh *)",
 
       "Bash(curl -s *)",
       "Bash(curl -sS *)",

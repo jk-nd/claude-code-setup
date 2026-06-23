@@ -7,12 +7,16 @@
 # (the `gh pr checks --exit-status` trap and `| tail` exit-code masking).
 #
 # Usage:
-#   ci-watch.sh <pr-number> [--repo owner/name] [--interval secs] [--timeout secs]
+#   ci-watch.sh <pr-number> [--repo owner/name] [--interval secs] [--timeout secs] [--settle secs]
 #   ci-watch.sh --branch <branch> [--repo owner/name] [...]
+#
+# --settle (default 10s): an empty check rollup must persist across two polls
+# (this wait between them) before it is treated as "no checks" — so checks
+# that have not registered yet on a fresh PR can't produce a false green.
 #
 # Exit codes:
 #   0  all checks terminal and none failed (SUCCESS / SKIPPED / NEUTRAL);
-#      also the "no checks ran" path-skip case.
+#      also the "no checks ran" path-skip case (confirmed across two polls).
 #   1  at least one check FAILED / CANCELLED / TIMED_OUT / errored.
 #   2  timed out waiting for checks to finish.
 #   3  usage / lookup error.
@@ -21,6 +25,7 @@ set -uo pipefail
 
 INTERVAL=20
 TIMEOUT=1800
+SETTLE=10
 REPO=""
 PR=""
 BRANCH=""
@@ -33,6 +38,7 @@ while [ $# -gt 0 ]; do
     --branch)   BRANCH="${2:?--branch needs a value}"; shift 2 ;;
     --interval) INTERVAL="${2:?}"; shift 2 ;;
     --timeout)  TIMEOUT="${2:?}"; shift 2 ;;
+    --settle)   SETTLE="${2:?}"; shift 2 ;;
     -h|--help)  grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*)         die "unknown flag: $1" ;;
     *)          PR="$1"; shift ;;
@@ -41,6 +47,10 @@ done
 
 command -v gh >/dev/null 2>&1      || die "gh CLI not found"
 command -v python3 >/dev/null 2>&1 || die "python3 not found"
+
+for v in "$INTERVAL" "$TIMEOUT" "$SETTLE"; do
+  case "$v" in ''|*[!0-9]*) die "--interval/--timeout/--settle must be non-negative integers" ;; esac
+done
 
 repo_args=()
 [ -n "$REPO" ] && repo_args=(--repo "$REPO")
@@ -53,6 +63,7 @@ fi
 [ -n "$PR" ] || die "usage: ci-watch.sh <pr-number> | --branch <branch>"
 
 deadline=$(( $(date +%s) + TIMEOUT ))
+empty_seen=0
 
 while :; do
   # Capture gh output into a variable so we read its REAL exit code. Never
@@ -112,11 +123,21 @@ PY
   pending=$(printf '%s\n' "$verdict" | awk '$1=="PENDING"{print $2}')
   failed=$(printf '%s\n' "$verdict"  | awk '$1=="FAILED"{print $2}')
 
-  # Path-skip / no-checks case: nothing to wait for — do NOT hang.
+  # Path-skip / no-checks case. An empty rollup can also mean checks just
+  # haven't *registered* yet (the script was invoked right after the push /
+  # PR-create). Require it to persist across two polls before concluding
+  # CLEAN, so a check-creation race can't produce a false green.
   if [ "${count:-0}" -eq 0 ]; then
-    echo "ci-watch: PR #$PR has no checks (path-skipped or none configured) — treating as CLEAN."
-    exit 0
+    empty_seen=$((empty_seen + 1))
+    if [ "$empty_seen" -ge 2 ]; then
+      echo "ci-watch: PR #$PR has no checks after ${empty_seen} polls (path-skipped or none configured) — treating as CLEAN."
+      exit 0
+    fi
+    echo "ci-watch: PR #$PR reports no checks yet — waiting ${SETTLE}s to rule out a check-creation race..."
+    sleep "$SETTLE"
+    continue
   fi
+  empty_seen=0
 
   if [ "${pending:-0}" -eq 0 ]; then
     printf '%s\n' "$verdict" | awk '$1=="CHECK"{$1="";sub(/^ /,"");print "  "$0}'

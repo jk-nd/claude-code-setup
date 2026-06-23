@@ -25,6 +25,7 @@ Optional flags: `--prefix <p>` (ephemeral branch prefix, default `worktree-agent
 2. Writes a **recovery manifest** (`<git-dir>/prune-manifests/prune-<ts>.txt`) listing every matching branch's tip SHA + date + subject **before** deleting anything. A wrongly deleted branch is recoverable from the SHA (reflog / `git fsck`); the manifest names it.
 3. Classifies each `worktree-agent-*` branch and only deletes the safe ones. It **never**:
    - touches a branch checked out in a live worktree that is **dirty** (uncommitted changes) or **unmerged** (commits not in base) — that's in-flight work, left and reported;
+   - touches the **base branch** or the **current branch** (even if a broadened `--prefix` would otherwise match them), and refuses an empty `--prefix` outright;
    - touches **co-tenant** branches (`codex/*`);
    - touches anything outside the ephemeral prefix.
 4. Orphaned ephemeral branches (no live worktree) are removed — merged ones outright, unmerged ones with the manifest as the safety net.

@@ -53,6 +53,11 @@ if [ -z "$BASE" ]; then
   fi
 fi
 
+# Refuse an empty prefix: it would make every branch a deletion candidate.
+[ -n "$PREFIX" ] || die "refusing an empty --prefix (it would match every branch)"
+
+CURRENT=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
 echo "prune-worktrees: prefix='$PREFIX' base='$BASE' mode=$([ $APPLY -eq 1 ] && echo APPLY || echo DRY-RUN)"
 
 # 1. Drop dangling worktree records up front.
@@ -67,12 +72,15 @@ manifest="$manifest_dir/prune-$ts.txt"
 # 2 + 3. Analysis in python3 (portable; avoids bash-version array quirks).
 # The human-readable report goes to stderr; the machine plan (DELETE lines)
 # goes to stdout so the apply step below can consume it.
-plan=$(PREFIX="$PREFIX" BASE="$BASE" MANIFEST="$manifest" python3 <<'PY'
+plan=$(PREFIX="$PREFIX" BASE="$BASE" MANIFEST="$manifest" CURRENT="$CURRENT" python3 <<'PY'
 import os, subprocess, sys
 
 prefix = os.environ["PREFIX"]
 base = os.environ["BASE"]
 manifest_path = os.environ["MANIFEST"]
+current = os.environ.get("CURRENT", "")
+base_short = base.rsplit("/", 1)[-1]
+never = {b for b in (current, base, base_short) if b}
 
 def git(*args):
     return subprocess.run(["git", *args], capture_output=True, text=True)
@@ -99,6 +107,9 @@ def is_dirty(path):
 
 protected, removable, manifest_lines = [], [], []
 for b in branches:
+    if b in never:
+        protected.append(f"{b} (base/current branch; never touched)")
+        continue
     if b.startswith("codex/"):
         protected.append(f"{b} (co-tenant; never touched)")
         continue

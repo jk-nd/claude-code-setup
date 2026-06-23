@@ -15,7 +15,7 @@ Watching CI to completion is reinvented constantly and is easy to get wrong. Thi
 .claude/skills/ci-watch/ci-watch.sh --branch <branch-name>
 ```
 
-Optional flags: `--repo owner/name` (defaults to the current repo), `--interval <secs>` (poll cadence, default 20), `--timeout <secs>` (default 1800).
+Optional flags: `--repo owner/name` (defaults to the current repo), `--interval <secs>` (poll cadence, default 20), `--timeout <secs>` (default 1800), `--settle <secs>` (grace before an empty rollup is treated as "no checks", default 10).
 
 It polls the PR's **status-check rollup** until every check reaches a terminal state, prints each check's `name=conclusion` plus the final `mergeable` / `mergeStateStatus`, and exits:
 
@@ -30,7 +30,7 @@ So `if .claude/skills/ci-watch/ci-watch.sh 40; then ...` is a reliable green/red
 
 - **`gh pr checks --exit-status` is unreliable here.** It can report before all checks are terminal and its semantics around skipped/neutral are surprising. This skill reads the `statusCheckRollup` directly and defines terminal/failed explicitly.
 - **`gh ... | tail` masks the real exit code.** A pipeline's exit code is the *last* command's, so a `gh` failure piped into `tail`/`grep`/`head` looks like success. The script captures `gh` output into a variable and checks its own `$?` — never through a pipe.
-- **Path-skipped PRs.** A docs-only PR may legitimately skip its Go jobs (see the `ci-pass` aggregator in `ci.yml.template`), so a naive watcher that waits for a specific required job to "appear" hangs forever. This skill treats "no checks ran" as CLEAN and returns immediately.
+- **Path-skipped PRs.** A docs-only PR may legitimately skip its Go jobs (see the `ci-pass` aggregator in `ci.yml.template`), so a naive watcher that waits for a specific required job to "appear" hangs forever. This skill treats "no checks ran" as CLEAN — but only after the empty rollup persists across two polls (`--settle`), so checks that simply haven't *registered* yet on a freshly-created PR don't produce a false green.
 
 ## Notes
 
