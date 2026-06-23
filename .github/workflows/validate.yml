@@ -1,0 +1,23 @@
+# Self-validation of the agent-harness surface (agents, skills, hooks, docs).
+# Language-agnostic and cheap, so it ships active (not a *.template) — every
+# repo bootstrapped from this template inherits it. See scripts/validate.py.
+name: validate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Validate harness artifacts
+        run: python3 scripts/validate.py

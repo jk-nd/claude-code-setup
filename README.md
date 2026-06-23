@@ -117,6 +117,7 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference, [`docs/ope
 | `templates/smoke-test-playbook.md.template` | (Opt-in) Starter shape for a versioned UI smoke-test manual. |
 | `scripts/second-opinion.py` | Calls Gemini (AI Studio free tier) or Opus (via local `claude --print`) for plan critiques. |
 | `scripts/install-pre-push-hook.sh` | Standalone installer for the strict pre-push hook. |
+| `scripts/validate.py` | Self-validation of the harness surface (frontmatter, anchors, leaked paths, invisible unicode). Run by `validate.yml`. |
 | `docs/templates/plan-mission.md` | Living-artifact format `planner` writes from. |
 | `docs/research/agent-team-calibration.md` | Orchestrator's drift log; entries propagate as v3+ amendment candidates. |
 | `docs/setup.md` | Operator's reference for everything bootstrap configures + manual steps. |
@@ -126,6 +127,7 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference, [`docs/ope
 | `docs/hooks.md` | The hooks layer: lifecycle + guard hooks and the hook contract. |
 | `docs/guard-hooks.md` | (Opt-in) `PreToolUse` guards: config-protection, safety-guard, investigate-before-edit. |
 | `.github/workflows/ci.yml.template` | Go-flavoured CI example with paths-filter, actionlint gate, merge-queue trigger. Replace per-language. |
+| `.github/workflows/validate.yml` | Active, language-agnostic self-validation of the harness surface (runs `scripts/validate.py`). |
 | `.github/workflows/trust-boundary.yml` | Compliance gate keyed off watched paths + label / approval, with merge-queue trigger. |
 | `.github/workflows/docs-audit.yml.template` | (Opt-in) Weekly cron opens a `doc-stale` audit issue for the orchestrator. |
 | `.github/workflows/govulncheck.yml.template` | (Opt-in) Weekly Go vulnerability scan. |
