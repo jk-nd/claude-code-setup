@@ -48,3 +48,6 @@ go.work.sum
 
 # Logs
 *.log
+
+# Agent runtime state (written by .claude/hooks/*)
+.claude/state/

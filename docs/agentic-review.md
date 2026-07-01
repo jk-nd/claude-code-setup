@@ -8,7 +8,7 @@ This supersedes v1's CI-side `cmd/agentic-review/` workflow, which the v2 audit 
 
 Run pre-PR against the implementer's diff. Adversarial framing: find what's wrong. Different model class than the implementer (default: Opus reviewing Sonnet work).
 
-Seven dimensions:
+Eight dimensions:
 
 | # | Dimension | What it checks |
 | --- | --- | --- |
@@ -19,6 +19,7 @@ Seven dimensions:
 | 5 | Stale claims | Commit message / PR description matches the diff. |
 | 6 | Doc-freshness | User-facing surface touched → matching doc update in the same diff. |
 | 7 | **Smoke-test sync** (v3) | User-facing surface touched + smoke-test playbook exists → playbook updated. |
+| 8 | **Domain invariants** (v4) | Diff touches an area with `.claude/invariants/<area>.md` → verified against it (ships `workflow-hardening` + `script-injection`). |
 
 Verdict: `pass` / `fail` / `needs-clarification`. Each entry cites file:line evidence.
 
@@ -32,8 +33,15 @@ The check is conservative: a false positive (flagging a PR that doesn't actually
 
 Recovery: see [`docs/operating.md` § When `adversary` flags Smoke-test sync](operating.md#when-adversary-flags-smoke-test-sync).
 
+## Domain invariants + convergence (v4)
+
+**Domain invariants (dimension 8).** When a diff touches an area that has a project invariants file at `.claude/invariants/<area>.md`, `adversary` — via the [`domain-adversary-checklist`](../.claude/skills/domain-adversary-checklist/) skill — verifies the diff against each invariant and reports HOLDS / VIOLATED / CANNOT-VERIFY with citations. The template ships two security invariants that apply **by path**: `.github/workflows/**` → `workflow-hardening`, and scripts / `*.sh` / command-building code → `script-injection`. Projects add their own (e.g. an enforcement / deny-path checklist).
+
+**High-risk convergence.** Single-pass review is the default. For high-risk diffs (watched paths, security surfaces, or a `convergence-review` label) the orchestrator may dispatch **two independent `adversary` instances** (different model class where possible) and require **both** to pass, with the stricter verdict winning on disagreement. Reserved for where a missed defect is costly — it roughly doubles review cost.
+
 ## What changed from v1 / v2
 
 - **v1**: `cmd/agentic-review/` CI workflow, opt-out via env var, near-zero useful signal in practice. Audited and disabled mid-2026.
 - **v2**: `adversary` subagent replaces v1; six review dimensions; pre-PR with full orchestrator context; OAuth-based, no API key secret needed. CI-side path removed entirely.
 - **v3**: `adversary` adds the **Smoke-test sync** dimension. v3 does NOT bring back the v1 CI-side path — the v2 decision stands. If a project insists on a CI-side LLM review on top of `adversary`, that's a project-local concern and lives outside this template.
+- **v4**: `adversary` adds the **Domain invariants** dimension (project-supplied checklists at `.claude/invariants/<area>.md` via `domain-adversary-checklist`; ships `workflow-hardening` + `script-injection`) and an optional **two-reviewer convergence** mode for high-risk diffs.

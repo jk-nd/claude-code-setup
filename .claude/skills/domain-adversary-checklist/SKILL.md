@@ -5,7 +5,7 @@ description: Run the adversary review agent against a project-defined invariants
 
 # domain-adversary-checklist
 
-The `adversary` agent (`.claude/agents/adversary.md`) is generic — "find what's wrong" against the spec and tests. But the *invariants that matter* for a sensitive area are project-specific, and they currently get hand-typed into the adversary prompt every PR — lossy and inconsistent. This skill is the **mechanism** that runs the adversary against a checklist the project owns, so the standard is enforced the same way every time. The project supplies the **content** (its invariants); the template ships the mechanism + an example.
+The `adversary` agent (`.claude/agents/adversary.md`) is generic — "find what's wrong" against the spec and tests. But the *invariants that matter* for a sensitive area are project-specific, and they currently get hand-typed into the adversary prompt every PR — lossy and inconsistent. This skill is the **mechanism** that runs the adversary against a checklist the project owns, so the standard is enforced the same way every time. The project supplies the **content** (its invariants); the template ships the mechanism, an example, and two **security invariants that apply by path**: `.github/workflows/**` → `workflow-hardening.md`, and scripts / `*.sh` / command-building code → `script-injection.md`. When a diff touches those paths, run this skill with the matching invariants even if no area was named.
 
 ## How to use it
 

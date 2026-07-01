@@ -112,17 +112,27 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference, [`docs/ope
 | `.claude/agents/*.md` | The 9 subagent definitions (project-scoped). |
 | `.claude/skills/*/SKILL.md` | Reusable how-to skills the orchestrator invokes on demand: `ci-watch`, `prune-worktrees`, `domain-adversary-checklist`. See `docs/skills.md`. |
 | `.claude/invariants/*.md` | Project-owned must-hold checklists the `domain-adversary-checklist` skill runs the `adversary` agent against. Ships an example. |
-| `templates/claude-settings.json.template` | Curated permissions allowlist with v3 Bash auto-allowlist (git, go, make, second-opinion.py). Bootstrap copies to `.claude/settings.json`. |
+| `.claude/hooks/*.sh` | Lifecycle + guard hooks that make load-bearing operating rules executable (session memory persistence, safety gates). See `docs/hooks.md`. |
+| `.claude/commands/*.md` | Slash-commands that invoke the operating loop: `/ship`, `/fix-defect`, `/cut-release`, `/digest`, `/gate-status`, `/adr`. See `docs/commands.md`. |
+| `templates/claude-settings.json.template` | Curated permissions allowlist + lifecycle/guard hook wiring. Bootstrap copies to `.claude/settings.json`. |
 | `templates/smoke-test-playbook.md.template` | (Opt-in) Starter shape for a versioned UI smoke-test manual. |
 | `scripts/second-opinion.py` | Calls Gemini (AI Studio free tier) or Opus (via local `claude --print`) for plan critiques. |
 | `scripts/install-pre-push-hook.sh` | Standalone installer for the strict pre-push hook. |
+| `scripts/validate.py` | Self-validation of the harness surface (frontmatter, anchors, leaked paths, invisible unicode). Run by `validate.yml`. |
+| `scripts/context-budget.py` | Audit of approximate context consumed by the harness surface (agents/skills/rules/docs); flags bloat. |
+| `scripts/calibration-add.py` | Append a structured (confidence/scope/domain) entry to the calibration log. |
 | `docs/templates/plan-mission.md` | Living-artifact format `planner` writes from. |
 | `docs/research/agent-team-calibration.md` | Orchestrator's drift log; entries propagate as v3+ amendment candidates. |
 | `docs/setup.md` | Operator's reference for everything bootstrap configures + manual steps. |
 | `docs/operating.md` | Day-to-day operating recipes (merge-cascade, parallel tracks, recovery patterns). |
 | `docs/agentic-review.md` | `adversary` review dimensions + opt-in CI-side LLM review notes. |
 | `docs/skills.md` | The skills layer: agents-vs-skills, when to author a skill, and the built-in skills to use first. |
+| `docs/hooks.md` | The hooks layer: lifecycle + guard hooks and the hook contract. |
+| `docs/guard-hooks.md` | (Opt-in) `PreToolUse` guards: config-protection, safety-guard, investigate-before-edit. |
+| `docs/commands.md` | The command layer: invocable entry points to the operating loop. |
+| `docs/adr/` | Architecture Decision Records: template + convention for shape decisions. |
 | `.github/workflows/ci.yml.template` | Go-flavoured CI example with paths-filter, actionlint gate, merge-queue trigger. Replace per-language. |
+| `.github/workflows/validate.yml` | Active, language-agnostic self-validation of the harness surface (runs `scripts/validate.py`). |
 | `.github/workflows/trust-boundary.yml` | Compliance gate keyed off watched paths + label / approval, with merge-queue trigger. |
 | `.github/workflows/docs-audit.yml.template` | (Opt-in) Weekly cron opens a `doc-stale` audit issue for the orchestrator. |
 | `.github/workflows/govulncheck.yml.template` | (Opt-in) Weekly Go vulnerability scan. |

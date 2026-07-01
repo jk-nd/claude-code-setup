@@ -29,3 +29,18 @@ PASS/FAIL verdict plus a must-fix list.
 Keep these files small and specific — one area per file. They are the
 source of truth for what "correct" means in that area, so review them like any
 other load-bearing spec.
+
+## Shipped invariants
+
+Besides `example-fail-closed.md`, the template ships two **security invariants
+that apply by path** — `adversary` (dimension 8) runs them via the
+`domain-adversary-checklist` skill whenever a diff touches the matching paths,
+without needing an area named:
+
+- **`workflow-hardening.md`** — `.github/workflows/**`: pinned action SHAs,
+  least-privilege permissions, no `curl | bash`, no `${{ }}` script injection.
+- **`script-injection.md`** — scripts / `*.sh` / command-building code: no
+  command injection, safe subprocess, no path traversal, no secret
+  exfiltration, fail-closed on error.
+
+They map to the supply-chain policy in `SECURITY.md`.
