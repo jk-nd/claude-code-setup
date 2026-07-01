@@ -156,10 +156,14 @@ jobs:
           # remote script. Download the pinned release artifact and verify
           # it against the release's published checksums before running.
           base="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
-          curl -sSfL -o actionlint.tar.gz "${base}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          # Keep the release filename on disk: `sha256sum -c` verifies by the
+          # filename listed in the checksums file, so the downloaded file must
+          # carry that exact name.
+          curl -sSfL -o "$tarball" "${base}/${tarball}"
           curl -sSfL -o actionlint_checksums.txt "${base}/actionlint_${ACTIONLINT_VERSION}_checksums.txt"
-          grep " actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz$" actionlint_checksums.txt | sha256sum -c -
-          tar -xzf actionlint.tar.gz actionlint
+          grep " ${tarball}$" actionlint_checksums.txt | sha256sum -c -
+          tar -xzf "$tarball" actionlint
           ./actionlint -color
 
   # Aggregator job — the single overall CI signal.
