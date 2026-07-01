@@ -59,10 +59,14 @@ jobs:
   trust-boundary-gate:
     name: trust-boundary-gate
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
+    # Run on merge_group too, so the required check always reports at
+    # merge-queue time. On a merge_group event there is no
+    # `github.event.pull_request`, so the draft guard only applies to real PRs.
+    if: github.event_name == 'merge_group' || github.event.pull_request.draft == false
     steps:
       - name: Compute compliance-sensitive paths touched
         id: paths
+        if: github.event_name != 'merge_group'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
@@ -104,7 +108,7 @@ jobs:
 
       - name: Check for compliance-review label or approval
         id: gate
-        if: steps.paths.outputs.hit_count != '0'
+        if: github.event_name != 'merge_group' && steps.paths.outputs.hit_count != '0'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           PR_NUMBER:   ${{ steps.paths.outputs.pr_number }}
@@ -139,7 +143,7 @@ jobs:
             core.setOutput('passes', String(hasLabel || approvedOnHead));
 
       - name: Post or update sticky summary comment
-        if: steps.paths.outputs.hit_count != '0'
+        if: github.event_name != 'merge_group' && steps.paths.outputs.hit_count != '0'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           HITS_JSON:        ${{ steps.paths.outputs.hits_json }}
@@ -215,7 +219,7 @@ jobs:
             }
 
       - name: Enforce gate
-        if: steps.paths.outputs.hit_count != '0'
+        if: github.event_name != 'merge_group' && steps.paths.outputs.hit_count != '0'
         env:
           PASSES:    ${{ steps.gate.outputs.passes }}
           HITS_JSON: ${{ steps.paths.outputs.hits_json }}
@@ -237,6 +241,17 @@ jobs:
           exit 1
 
       - name: No watched paths touched
-        if: steps.paths.outputs.hit_count == '0'
+        if: github.event_name != 'merge_group' && steps.paths.outputs.hit_count == '0'
         run: |
           echo "trust-boundary-gate: no compliance-sensitive paths touched; skipping."
+
+      - name: Merge-queue pass
+        if: github.event_name == 'merge_group'
+        run: |
+          # At merge-queue time there is no single PR to evaluate: the human
+          # compliance gate (label / approval) was already enforced when the PR
+          # entered the queue, and required checks must pass for that to happen.
+          # The queue re-runs checks for correctness, not to re-litigate the
+          # human gate — so report clean here rather than leaving the required
+          # check unreported (which would stall the queue).
+          echo "trust-boundary-gate: merge_group event — human gate enforced at PR time; passing at queue time."
