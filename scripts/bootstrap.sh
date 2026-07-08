@@ -13,9 +13,10 @@
 #   4. Prompt for ceremony_level (foundation | demo | iterate-fast).
 #   5. Substitute ${OWNER}, ${REPO}, ${WATCHED_PATHS},
 #      ${WATCHED_PATHS_AS_CODEOWNER_LINES}, ${CEREMONY_LEVEL} placeholders
-#      and rename the always-renamed *.template files (CODEOWNERS). The Go
-#      ci.yml.template is activated as ci.yml only for Go projects; for
-#      other stacks it is left in place as a marked reference stub.
+#      and rename the always-renamed *.template files (CODEOWNERS). A
+#      turnkey CI pipeline is activated as ci.yml for go (ci.yml.template)
+#      and python (ci-python.yml.template); other stacks keep the go
+#      pipeline in place as a marked reference stub to adapt.
 #   6. Prompt-rename the opt-in *.template files: dependabot, govulncheck,
 #      nightly, docs-audit, .claude/settings.json, dependabot-automerge,
 #      dependabot-rebase-stale, main-broken-sentinel, release,
@@ -265,8 +266,8 @@ echo
 echo "Primary language / stack. This sets language-aware defaults: which CI"
 echo "pipeline is activated, the watched-paths default, and the required"
 echo "branch-protection check."
-echo "  go     — activate the Go CI pipeline; Go watched paths (turnkey)."
-echo "  python — Python project; Go CI left as a reference stub to replace."
+echo "  go     — activate the Go CI pipeline (turnkey); Go watched paths."
+echo "  python — activate the Python CI pipeline (turnkey): uv + ruff + pytest."
 echo "  rego   — OPA/Rego policy project; Go CI left as a reference stub."
 echo "  other  — any other stack; Go CI left as a reference stub."
 echo
@@ -358,21 +359,40 @@ for src in "${ALWAYS_RENAME_TEMPLATES[@]}"; do
     rename_template "$src" "$dst"
 done
 
-# CI pipeline: the template ships a Go reference pipeline. Activate it as
-# ci.yml only for Go projects. For other stacks, leave the *.template in
-# place (only *.yml files run, so it stays inert) with its banner, so a
-# non-Go repo never silently ships a Go pipeline as if it were its own.
-if [ -f ".github/workflows/ci.yml.template" ]; then
-    if [ "$STACK" = "go" ]; then
-        rename_template ".github/workflows/ci.yml.template" ".github/workflows/ci.yml"
-    else
-        echo "  .github/workflows/ci.yml.template LEFT AS A REFERENCE STUB (stack: $STACK)."
-        echo "    It is a Go pipeline and is NOT active (only *.yml runs). Replace its"
-        echo "    build/test/lint steps with your $STACK toolchain, then rename it to"
-        echo "    .github/workflows/ci.yml. The job-shape (paths-filter -> gated jobs ->"
-        echo "    ci-pass aggregator) carries over unchanged."
-    fi
-fi
+# CI pipeline: the template ships turnkey reference pipelines for go
+# (ci.yml.template) and python (ci-python.yml.template), both sharing the
+# paths-filter -> gated jobs -> fail-closed ci-pass job-shape. Activate the
+# one matching the stack as ci.yml and drop the unused template(s). For a
+# stack without a turnkey pipeline, leave the Go *.template in place (only
+# *.yml runs, so it stays inert) with its banner, so a non-Go repo never
+# silently ships a Go pipeline as if it were its own.
+case "$STACK" in
+    go)
+        if [ -f ".github/workflows/ci.yml.template" ]; then
+            rename_template ".github/workflows/ci.yml.template" ".github/workflows/ci.yml"
+        fi
+        rm -f ".github/workflows/ci-python.yml.template"
+        ;;
+    python)
+        if [ -f ".github/workflows/ci-python.yml.template" ]; then
+            rename_template ".github/workflows/ci-python.yml.template" ".github/workflows/ci.yml"
+            echo "    (python pipeline: uv + ruff + pytest)"
+            rm -f ".github/workflows/ci.yml.template"
+        elif [ -f ".github/workflows/ci.yml.template" ]; then
+            echo "  No ci-python.yml.template found; .github/workflows/ci.yml.template LEFT AS A REFERENCE STUB."
+        fi
+        ;;
+    *)
+        rm -f ".github/workflows/ci-python.yml.template"
+        if [ -f ".github/workflows/ci.yml.template" ]; then
+            echo "  .github/workflows/ci.yml.template LEFT AS A REFERENCE STUB (stack: $STACK)."
+            echo "    It is a Go pipeline and is NOT active (only *.yml runs). Replace its"
+            echo "    build/test/lint steps with your $STACK toolchain, then rename it to"
+            echo "    .github/workflows/ci.yml. The job-shape (paths-filter -> gated jobs ->"
+            echo "    ci-pass aggregator) carries over unchanged."
+        fi
+        ;;
+esac
 
 # -----------------------------------------------------------------
 # Opt-in *.template renames
@@ -643,10 +663,10 @@ if prompt_yn "Configure initial branch protection on 'main'?" "n"; then
     # Required status checks are language-aware. The Go jobs (build-and-
     # test, lint) are path-gated and skip on non-Go PRs, so they cannot be
     # required directly — a skipped *required* check leaves the PR pending
-    # forever. Go projects require the fail-closed `ci-pass` aggregator
-    # instead; other stacks require only the trust-boundary gate until
-    # their own pipeline exists.
-    if [ "$STACK" = "go" ]; then
+    # forever. Stacks with a turnkey pipeline (go, python) require the
+    # fail-closed `ci-pass` aggregator instead; other stacks require only
+    # the trust-boundary gate until their own pipeline exists.
+    if [ "$STACK" = "go" ] || [ "$STACK" = "python" ]; then
         REQUIRED_CONTEXTS='"ci-pass", "trust-boundary-gate"'
     else
         REQUIRED_CONTEXTS='"trust-boundary-gate"'
@@ -732,11 +752,17 @@ fi
 # Footer
 # -----------------------------------------------------------------
 
-if [ "$STACK" = "go" ]; then
-    CI_NEXT_STEP="Review .github/workflows/ci.yml (Go pipeline, active for this repo)."
-else
-    CI_NEXT_STEP="Replace the Go reference .github/workflows/ci.yml.template with your ${STACK} pipeline, then rename it to ci.yml. The job-shape carries over."
-fi
+case "$STACK" in
+    go)
+        CI_NEXT_STEP="Review .github/workflows/ci.yml (Go pipeline, active for this repo)."
+        ;;
+    python)
+        CI_NEXT_STEP="Review .github/workflows/ci.yml (Python pipeline — uv + ruff + pytest, active for this repo); add a pyproject.toml with ruff + pytest configured."
+        ;;
+    *)
+        CI_NEXT_STEP="Replace the Go reference .github/workflows/ci.yml.template with your ${STACK} pipeline, then rename it to ci.yml. The job-shape carries over."
+        ;;
+esac
 
 cat <<EOF
 

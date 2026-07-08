@@ -131,7 +131,8 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference, [`docs/ope
 | `docs/guard-hooks.md` | (Opt-in) `PreToolUse` guards: config-protection, safety-guard, investigate-before-edit. |
 | `docs/commands.md` | The command layer: invocable entry points to the operating loop. |
 | `docs/adr/` | Architecture Decision Records: template + convention for shape decisions. |
-| `.github/workflows/ci.yml.template` | Go-flavoured CI example with paths-filter, actionlint gate, merge-queue trigger. Replace per-language. |
+| `.github/workflows/ci.yml.template` | Turnkey **Go** CI pipeline: paths-filter → gated jobs → fail-closed `ci-pass`, actionlint gate, merge-queue trigger. Activated for the `go` stack. |
+| `.github/workflows/ci-python.yml.template` | Turnkey **Python** CI pipeline (uv + ruff + pytest), same job-shape. Activated for the `python` stack. |
 | `.github/workflows/validate.yml` | Active, language-agnostic self-validation of the harness surface (runs `scripts/validate.py`). |
 | `.github/workflows/trust-boundary.yml` | Compliance gate keyed off watched paths + label / approval, with merge-queue trigger. |
 | `.github/workflows/docs-audit.yml.template` | (Opt-in) Weekly cron opens a `doc-stale` audit issue for the orchestrator. |
@@ -152,7 +153,7 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference, [`docs/ope
 ## What's not
 
 - A migration guide from v1 or v2. v3 is for new repos and for v2 repos willing to re-bootstrap.
-- A language-specific build pipeline. `ci.yml.template` is Go-flavoured as a starting point; swap it for your stack.
+- A build pipeline for every language. Turnkey pipelines ship for **go** and **python** (same job-shape); other stacks adapt the Go reference and rename it to `ci.yml`.
 - Pre-populated team handles. The bootstrap fills in `${OWNER}`; the `compliance-review` team must be created in your org.
 - Branch protection pre-applied. Bootstrap offers to do it.
 - Repository Rulesets pre-applied. The maintainer-identity allowlist for branch protection requires the GitHub UI; bootstrap saves the allowlist as a documentation reference and prints the next steps.
