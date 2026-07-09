@@ -403,11 +403,20 @@ echo "Optional template features:"
 echo
 
 # .claude/settings.json — curated permissions allowlist for the agent team.
-if [ -f "templates/claude-settings.json.template" ]; then
-    if prompt_yn "Install curated .claude/settings.json (permissions allowlist for the agent team)?" "y"; then
-        rename_template "templates/claude-settings.json.template" ".claude/settings.json"
+# Stack-matched: python installs the uv/ruff/pytest allowlist; go/other install
+# the go build/test/vet allowlist. Only the chosen template is kept — night mode
+# works out of the box because the agent's own toolchain is pre-allowed.
+SETTINGS_TEMPLATE="templates/claude-settings.json.template"
+if [ "$STACK" = "python" ] && [ -f "templates/claude-settings-python.json.template" ]; then
+    SETTINGS_TEMPLATE="templates/claude-settings-python.json.template"
+fi
+if [ -f "$SETTINGS_TEMPLATE" ]; then
+    if prompt_yn "Install curated .claude/settings.json ($STACK permissions allowlist for the agent team)?" "y"; then
+        rename_template "$SETTINGS_TEMPLATE" ".claude/settings.json"
+        # drop the stack-mismatched template so the repo ships one clear source
+        rm -f "templates/claude-settings.json.template" "templates/claude-settings-python.json.template"
     else
-        echo "  Skipped. Copy templates/claude-settings.json.template → .claude/settings.json later if you change your mind."
+        echo "  Skipped. Copy $SETTINGS_TEMPLATE → .claude/settings.json later if you change your mind."
     fi
 fi
 

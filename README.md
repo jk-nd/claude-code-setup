@@ -114,7 +114,8 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference, [`docs/ope
 | `.claude/invariants/*.md` | Project-owned must-hold checklists the `domain-adversary-checklist` skill runs the `adversary` agent against. Ships an example. |
 | `.claude/hooks/*.sh` | Lifecycle + guard hooks that make load-bearing operating rules executable (session memory persistence, safety gates). See `docs/hooks.md`. |
 | `.claude/commands/*.md` | Slash-commands that invoke the operating loop: `/ship`, `/fix-defect`, `/cut-release`, `/digest`, `/gate-status`, `/adr`. See `docs/commands.md`. |
-| `templates/claude-settings.json.template` | Curated permissions allowlist + lifecycle/guard hook wiring. Bootstrap copies to `.claude/settings.json`. |
+| `templates/claude-settings.json.template` | Curated **Go** permissions allowlist (`go build/test/vet`) + lifecycle/guard hook wiring. Installed as `.claude/settings.json` for `go`/other stacks. |
+| `templates/claude-settings-python.json.template` | Curated **Python** permissions allowlist (`uv`/`ruff`/`pytest`/`mypy`), same hooks & deny-list. Installed as `.claude/settings.json` for the `python` stack. |
 | `templates/smoke-test-playbook.md.template` | (Opt-in) Starter shape for a versioned UI smoke-test manual. |
 | `scripts/second-opinion.py` | Calls Gemini (AI Studio free tier) or Opus (via local `claude --print`) for plan critiques. |
 | `scripts/install-pre-push-hook.sh` | Standalone installer for the strict pre-push hook. |
