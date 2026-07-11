@@ -47,7 +47,7 @@ KNOWN_TOOLS = {
     "Read", "Grep", "Glob", "Bash", "Write", "Edit", "MultiEdit",
     "WebFetch", "WebSearch", "NotebookEdit", "Task", "TodoWrite",
 }
-KNOWN_MODELS = {"opus", "sonnet", "haiku"}
+KNOWN_MODELS = {"opus", "sonnet", "haiku", "fable"}
 
 
 def check_agents() -> None:

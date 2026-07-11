@@ -590,3 +590,15 @@ The calibration log (`docs/research/agent-team-calibration.md`, [#20](#20-calibr
 **Promotion rule.** A `global`-scope pattern at **confidence ≥ 0.7** seen in **≥ 2 entries** (here or across repos) becomes an upstream amendment candidate: file an issue on the template repo describing the change, per [#22](#22-cross-repo-dependencies-signal-via-github-issues-in-the-target-repo). `project`-scope patterns stay local.
 
 `scripts/calibration-add.py` appends a well-formed entry; the optional `SessionEnd` hook ([`docs/hooks.md`](docs/hooks.md)) can draft candidates from a session for the orchestrator to confirm. This is the structured successor to [#20](#20-calibration-log-as-a-default-template-file).
+
+### 35. Model-tier escalation for difficult work
+
+Model-tier ladder (ascending capability for this purpose): **`sonnet` → `opus` → `fable`**. Each agent declares a **default** model in its frontmatter; that default is the floor, not a fixed choice. The orchestrator **escalates the `implementer`'s tier to match a task's difficulty**, and the **`adversary` always reviews one tier above the implementer that produced the diff**. That "different, *stronger* model class" is not a nicety — it is what lets the adversary catch test-invisible bugs the implementer could not see, so the gap is preserved at every tier.
+
+- **`implementer`** — `sonnet` by default; **`opus`** for hard logic, tricky concurrency, or subtle algorithms; **`fable`** for the hardest, most novel problems where deeper reasoning earns its cost.
+- **`adversary` = one tier above the implementer**, capped at the top of the ladder:
+  - implementer `sonnet` → adversary **`opus`** (the defaults)
+  - implementer `opus` → adversary **`fable`**
+  - implementer `fable` → adversary **`fable`** *plus* the two-reviewer **convergence** pass (two independent `fable` reviews must both pass — see `.claude/agents/adversary.md` / [`docs/agentic-review.md`](docs/agentic-review.md)), since there is no higher tier to escalate to.
+
+Escalate **deliberately**: higher tiers cost more and run slower, so the base tiers (`sonnet` implementer / `opus` adversary) are right for the bulk of routine work — reserve the top of the ladder for genuine difficulty or risk. Mechanically, the orchestrator sets each tier via the per-dispatch model override; the frontmatter default applies when no override is given.
