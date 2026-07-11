@@ -51,3 +51,6 @@ go.work.sum
 
 # Agent runtime state (written by .claude/hooks/*)
 .claude/state/
+
+# Local per-operator permission overrides (night-mode etc.) — never committed
+.claude/settings.local.json

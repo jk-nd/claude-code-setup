@@ -1,0 +1,18 @@
+{
+  "_comment": "night-mode starter — copy to .claude/settings.local.json (git-ignored) and edit for THIS repo's build. Additive to the shared .claude/settings.json; never weakens its deny-list. These are broader, operator-opt-in grants for an unattended run (see the night-mode skill). Trim to what your build actually uses.",
+  "permissions": {
+    "allow": [
+      "Bash(docker compose *)",
+      "Bash(docker ps)",
+      "Bash(docker ps *)",
+      "Bash(docker logs *)",
+      "Bash(docker stop *)",
+      "Bash(docker start *)",
+      "Bash(docker rm *)",
+      "Bash(gh pr merge *)",
+      "Bash(gh run *)",
+      "Bash(psql *)",
+      "Bash(make *)"
+    ]
+  }
+}
