@@ -590,3 +590,12 @@ The calibration log (`docs/research/agent-team-calibration.md`, [#20](#20-calibr
 **Promotion rule.** A `global`-scope pattern at **confidence ≥ 0.7** seen in **≥ 2 entries** (here or across repos) becomes an upstream amendment candidate: file an issue on the template repo describing the change, per [#22](#22-cross-repo-dependencies-signal-via-github-issues-in-the-target-repo). `project`-scope patterns stay local.
 
 `scripts/calibration-add.py` appends a well-formed entry; the optional `SessionEnd` hook ([`docs/hooks.md`](docs/hooks.md)) can draft candidates from a session for the orchestrator to confirm. This is the structured successor to [#20](#20-calibration-log-as-a-default-template-file).
+
+### 35. Model-tier escalation for difficult work
+
+Each agent declares a **default** model in its frontmatter (e.g. `implementer` = `sonnet`, `adversary` = `opus`). The orchestrator **escalates the dispatch model to match a task's difficulty or risk** rather than always running the default — the frontmatter model is the floor, not a fixed choice.
+
+- **`implementer`** — `sonnet` by default; **`opus`** for hard logic, tricky concurrency, or subtle algorithms; **`fable`** for the hardest, most novel problems where deeper reasoning earns its cost.
+- **`adversary`** — `opus` by default; **`fable`** for the highest-risk diffs (watched paths, security surfaces). The two-reviewer convergence pass (see `.claude/agents/adversary.md` / [`docs/agentic-review.md`](docs/agentic-review.md)) can pair `opus` + `fable` so the two independent reviews are genuinely different model classes.
+
+Escalate **deliberately**: higher tiers cost more and run slower, so the default tier is the right call for the bulk of routine work — reserve `opus`/`fable` for tasks whose difficulty or risk justifies it. Mechanically, the orchestrator sets the tier via the per-dispatch model override; the frontmatter default applies when no override is given.
