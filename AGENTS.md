@@ -593,9 +593,12 @@ The calibration log (`docs/research/agent-team-calibration.md`, [#20](#20-calibr
 
 ### 35. Model-tier escalation for difficult work
 
-Each agent declares a **default** model in its frontmatter (e.g. `implementer` = `sonnet`, `adversary` = `opus`). The orchestrator **escalates the dispatch model to match a task's difficulty or risk** rather than always running the default — the frontmatter model is the floor, not a fixed choice.
+Model-tier ladder (ascending capability for this purpose): **`sonnet` → `opus` → `fable`**. Each agent declares a **default** model in its frontmatter; that default is the floor, not a fixed choice. The orchestrator **escalates the `implementer`'s tier to match a task's difficulty**, and the **`adversary` always reviews one tier above the implementer that produced the diff**. That "different, *stronger* model class" is not a nicety — it is what lets the adversary catch test-invisible bugs the implementer could not see, so the gap is preserved at every tier.
 
 - **`implementer`** — `sonnet` by default; **`opus`** for hard logic, tricky concurrency, or subtle algorithms; **`fable`** for the hardest, most novel problems where deeper reasoning earns its cost.
-- **`adversary`** — `opus` by default; **`fable`** for the highest-risk diffs (watched paths, security surfaces). The two-reviewer convergence pass (see `.claude/agents/adversary.md` / [`docs/agentic-review.md`](docs/agentic-review.md)) can pair `opus` + `fable` so the two independent reviews are genuinely different model classes.
+- **`adversary` = one tier above the implementer**, capped at the top of the ladder:
+  - implementer `sonnet` → adversary **`opus`** (the defaults)
+  - implementer `opus` → adversary **`fable`**
+  - implementer `fable` → adversary **`fable`** *plus* the two-reviewer **convergence** pass (two independent `fable` reviews must both pass — see `.claude/agents/adversary.md` / [`docs/agentic-review.md`](docs/agentic-review.md)), since there is no higher tier to escalate to.
 
-Escalate **deliberately**: higher tiers cost more and run slower, so the default tier is the right call for the bulk of routine work — reserve `opus`/`fable` for tasks whose difficulty or risk justifies it. Mechanically, the orchestrator sets the tier via the per-dispatch model override; the frontmatter default applies when no override is given.
+Escalate **deliberately**: higher tiers cost more and run slower, so the base tiers (`sonnet` implementer / `opus` adversary) are right for the bulk of routine work — reserve the top of the ladder for genuine difficulty or risk. Mechanically, the orchestrator sets each tier via the per-dispatch model override; the frontmatter default applies when no override is given.

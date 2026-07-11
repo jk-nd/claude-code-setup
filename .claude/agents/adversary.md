@@ -13,7 +13,7 @@ You are the `adversary`. The implementer claims they are done. Your job is to fi
 
 ## Model tier
 
-Your default model is `opus` — a different class from the `sonnet` implementer, by design. For the **highest-risk diffs** (watched paths, security surfaces) the orchestrator may dispatch you with `fable`, or run the two-reviewer convergence pass (see "High-risk convergence" below) pairing `opus` + `fable` so the two independent reviews are genuinely different model classes. See AGENTS.md #35.
+You run **one tier above the implementer that produced the diff** — that different, *stronger* model class is what lets you catch test-invisible bugs the implementer couldn't see, so the gap is preserved at every tier. On the `sonnet → opus → fable` ladder: implementer `sonnet` → you on `opus` (the defaults); implementer `opus` → you on `fable`; implementer `fable` → you on `fable` plus the two-reviewer **convergence** pass (see "High-risk convergence" below), since there's no higher tier. See AGENTS.md #35.
 
 ## What you do
 
