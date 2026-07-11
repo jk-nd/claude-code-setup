@@ -69,4 +69,4 @@ If the harness has cleaned up your worktree because of a denial chain, return th
 
 ## Done condition
 
-Task `T<N>` is `[x]` in the plan-mission. Commit landed on the worktree branch. `test-author`-written tests pass locally. Lint clean. Affected docs updated in the same commit. Discovered constraints (if any) logged in the plan. Return the commit SHA and the list of green tests.
+Task `T<N>` is `[x]` in the plan-mission. Commit landed on the worktree branch. `test-author`-written tests pass locally. Lint clean. Affected docs updated in the same commit. Discovered constraints (if any) logged in the plan. Return **terse** — the commit SHA, the list of green tests, and any discovered-constraint headline; keep the full detail in your transcript (AGENTS.md #37). Target ≤ 200 words.

@@ -612,3 +612,11 @@ A subagent dispatched onto a worktree is **bound** to it. If the orchestrator re
 **Agent-side guard.** Before committing, every edit-making subagent verifies it is on its **own** task's worktree/branch — the branch it was dispatched onto. If the expected worktree is gone, or the current branch is not the one it was dispatched onto, it **STOPS and surfaces** rather than committing into whatever cwd it landed in. See `.claude/agents/implementer.md`.
 
 **Failure mode this prevents.** Operator-observed (`jk-nd/gadp` night run): a Phase 7 worktree was removed after its merge; the Phase 7 agent was then resumed and committed into the **Phase 8** worktree because its own was gone — silent cross-phase corruption.
+
+### 37. Agent reports are terse; the detail stays on disk
+
+The bloat in a long orchestrator session is the orchestrator's **own** context. Each agent already keeps its tool output (file reads, test runs, iterations) out of the orchestrator via the Agent tool — but a 2–4k-word final report pasted back in, phase after phase, is what fills the window and forces compaction.
+
+**Rule.** Every agent returns a **terse, structured** result — a verdict + a short findings/results list + "full detail in my transcript" — targeting **≤ 200 words**. The full transcript is already on disk; the orchestrator `Read`s it on demand for the rare case it needs specifics. Dispatch briefs say so explicitly: *"report back in ≤200 words; keep the detail in your transcript."*
+
+**The orchestrator's read-outs to the user follow the same discipline** — a two-line verdict + the fix, not a pasted full report (reinforces [#7](#7-read-outs-are-lossy-the-artifact-is-canonical) and [#30](#30-human-legibility-norm-for-read-outs-and-decision-write-ups)). And durable state lives on disk (plan-mission, git history, task list), which survives compaction — the orchestrator re-derives the narrative from there rather than carrying it in context, so compaction stays cheap.
