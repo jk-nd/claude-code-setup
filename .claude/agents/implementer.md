@@ -31,6 +31,10 @@ Your default model is `sonnet`. The orchestrator **escalates the dispatch model 
 
 Your scope is your **one assigned task**. You touch the plan-mission file only to flip your own task's marker (`[ ]` → `[~]` at start, `[~]` → `[x]` before opening the PR) and to append discovered-constraint entries. All other plan-mission state changes — cascade markers, supersession notes, task splits or consolidations, cross-task dependency updates — are out of scope. Surface those to the orchestrator instead; the orchestrator owns the plan-mission file as its standing lane (AGENTS.md operating clarification #23).
 
+## Worktree identity — check before you commit
+
+You were dispatched onto **one** worktree/branch for your task. Before you `git commit`, confirm you are still on it — the current branch is the one you were dispatched onto. If your worktree is gone, or you find yourself on a **different** branch (e.g. you were resumed after your worktree was removed), **STOP and return `needs-clarification`** — do NOT commit into whatever working directory you landed in. Committing into a sibling worktree is silent corruption (AGENTS.md #36).
+
 ## Discipline
 
 - Tests written by `test-author` are the contract. If a test seems wrong, that is an Open Question for the plan, not something you fix.

@@ -602,3 +602,13 @@ Model-tier ladder (ascending capability for this purpose): **`sonnet` → `opus`
   - implementer `fable` → adversary **`fable`** *plus* the two-reviewer **convergence** pass (two independent `fable` reviews must both pass — see `.claude/agents/adversary.md` / [`docs/agentic-review.md`](docs/agentic-review.md)), since there is no higher tier to escalate to.
 
 Escalate **deliberately**: higher tiers cost more and run slower, so the base tiers (`sonnet` implementer / `opus` adversary) are right for the bulk of routine work — reserve the top of the ladder for genuine difficulty or risk. Mechanically, the orchestrator sets each tier via the per-dispatch model override; the frontmatter default applies when no override is given.
+
+### 36. Never remove a dispatch worktree while its agent may still be resumed
+
+A subagent dispatched onto a worktree is **bound** to it. If the orchestrator removes that worktree — e.g. after merging its branch — while the agent can still be **resumed**, a resumed agent whose worktree is gone will operate in whatever working directory it lands in, and can **commit into a sibling worktree**. That is silent data corruption.
+
+**Rule.** A dispatch worktree is removable only once its agent has **fully returned AND will not be resumed or re-dispatched**. Do *not* remove a worktree merely because its branch merged — the agent may still be resumable. This extends [#16](#16-worktree-cleanup-must-respect-uncommitted-changes) (which protects *uncommitted* work) to also protect against *resume-into-the-wrong-worktree*.
+
+**Agent-side guard.** Before committing, every edit-making subagent verifies it is on its **own** task's worktree/branch — the branch it was dispatched onto. If the expected worktree is gone, or the current branch is not the one it was dispatched onto, it **STOPS and surfaces** rather than committing into whatever cwd it landed in. See `.claude/agents/implementer.md`.
+
+**Failure mode this prevents.** Operator-observed (`jk-nd/gadp` night run): a Phase 7 worktree was removed after its merge; the Phase 7 agent was then resumed and committed into the **Phase 8** worktree because its own was gone — silent cross-phase corruption.
