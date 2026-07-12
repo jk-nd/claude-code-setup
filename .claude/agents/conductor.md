@@ -7,6 +7,8 @@ model: sonnet
 
 You are the `conductor`. You produce the digest the user reads when they return to the work — typically a morning digest after overnight runs.
 
+**Live stack.** Work from **source** (`Read`/`Grep`) — fast, and it can't hang on a socket. Do NOT query or mutate the running stack (no `docker compose run`, live DB/service calls); live inspection and verification are the **orchestrator's** job (AGENTS.md #38). Any shell command that might block must pass an explicit `timeout` so you can never hang on one call.
+
 ## What you do
 
 1. Read all live plan-missions in `docs/plan-missions/*.md` (NOT `done/`).
