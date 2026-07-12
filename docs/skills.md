@@ -14,6 +14,7 @@ Without skills, hard-won *procedural* knowledge lives as passive memory "gotchas
 | [`ci-watch`](../.claude/skills/ci-watch/) | Wait for a PR's/branch's CI to finish and report pass/fail with correct exit codes; handles the path-skip case without hanging. Bundles `ci-watch.sh`. |
 | [`prune-worktrees`](../.claude/skills/prune-worktrees/) | Safe agent-worktree + stale-branch hygiene: manifest first, never delete in-flight or co-tenant work. Dry-run by default. Bundles `prune-worktrees.sh`. |
 | [`domain-adversary-checklist`](../.claude/skills/domain-adversary-checklist/) | Run the `adversary` agent against a project-supplied invariants file (`.claude/invariants/<area>.md`) instead of re-typing the rules per PR. Mechanism only; the project supplies the content. |
+| [`night-build`](../.claude/skills/night-build/) | The per-phase unattended build loop: implementer → adversary (one tier stronger) → orchestrator live-verify → fix → merge, with terse-reporting and disk-as-truth baked in. |
 
 `ci-watch` and `prune-worktrees` are orchestrator hygiene tools (CI watching and worktree cleanup are orchestrator jobs). `domain-adversary-checklist` composes with the existing `adversary` agent — see [`docs/agentic-review.md`](agentic-review.md).
 
