@@ -110,7 +110,8 @@ See [`docs/setup.md`](docs/setup.md) for the full operator reference, [`docs/ope
 | --- | --- |
 | `AGENTS.md` | Orchestrator operating contract (v3). Read this first. |
 | `.claude/agents/*.md` | The 9 subagent definitions (project-scoped). |
-| `.claude/skills/*/SKILL.md` | Reusable how-to skills the orchestrator invokes on demand: `ci-watch`, `prune-worktrees`, `domain-adversary-checklist`, `night-build`. See `docs/skills.md`. |
+| `.claude/skills/*/SKILL.md` | Reusable how-to skills the orchestrator invokes on demand: `ci-watch`, `prune-worktrees`, `domain-adversary-checklist`, `night-build`, `night-mode`. See `docs/skills.md`. |
+| `.claude/settings.local.json.example` | Copy-and-edit starter for a git-ignored, operator-opt-in night-mode permission profile (see the `night-mode` skill). |: night-mode permission profile)
 | `.claude/invariants/*.md` | Project-owned must-hold checklists the `domain-adversary-checklist` skill runs the `adversary` agent against. Ships an example. |
 | `.claude/hooks/*.sh` | Lifecycle + guard hooks that make load-bearing operating rules executable (session memory persistence, safety gates). See `docs/hooks.md`. |
 | `.claude/commands/*.md` | Slash-commands that invoke the operating loop: `/ship`, `/fix-defect`, `/cut-release`, `/digest`, `/gate-status`, `/adr`. See `docs/commands.md`. |
