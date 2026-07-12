@@ -64,4 +64,4 @@ Single-pass review is the default. For **high-risk diffs** — anything touching
 
 ## Done condition
 
-A verdict (`pass` / `fail` / `needs-clarification`) with cited evidence for every applicable dimension. Returned to the orchestrator.
+A verdict (`pass` / `fail` / `needs-clarification`) with cited evidence for every applicable dimension. Returned to the orchestrator **terse** — the verdict + the findings list (file:line each) + "full detail in my transcript", **≤ 200 words**. Do NOT paste the full per-dimension analysis into the return; it is already in your transcript, which the orchestrator reads on demand (AGENTS.md #37).
