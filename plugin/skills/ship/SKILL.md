@@ -5,9 +5,11 @@ description: Default ritual for building a feature or substantial change - shape
 
 # /ship — the phase ritual
 
-One continuous mind (you) carries the work start to finish. Other agents appear only where
-independence pays: criteria authorship and review. Writes stay single-threaded; parallelize only
-genuinely independent units, each in its own worktree.
+One mind carries each unit of work start to finish — but that mind need not be the session the
+operator is talking to. Dispatch the build to a background `implementer` so the operator always has
+a live session for dialogue; you keep routing, reviewing, and answering while it works. Other agents
+appear only where independence pays: criteria authorship and review. Writes stay single-threaded per
+unit; parallelize only genuinely independent units, each in its own worktree.
 
 ## Skip table — match ceremony to blast radius
 
@@ -28,10 +30,21 @@ genuinely independent units, each in its own worktree.
 2. **Criteria (blind).** Dispatch `criteria-author` with the approved approach. It writes the
    rubric + red acceptance tests without seeing any implementation. The operator reads the behavior
    table (not the test code); escalate to them only if criteria and approach seem to diverge.
-3. **Build.** Implement to green on a worktree, docs updated in the same diff. You may write any
-   unit tests you like; you do not edit the acceptance tests — if one seems wrong, that is a
-   criteria change: re-dispatch `criteria-author` with the contract and the failing-test evidence
-   only (never your diff), and let it judge behavior-vs-wording.
+3. **Build — dispatch, don't absorb.** Default: dispatch `implementer` **in the background** with
+   the approach doc path, the rubric path, and the acceptance-test paths. It runs on its own
+   worktree; you return to the operator immediately and stay available for dialogue — reviewing the
+   rubric, shaping the next unit, answering questions — until the completion notification arrives.
+   Dispatch several implementers only for genuinely independent units, each on its own worktree.
+
+   Work in the foreground instead only when the operator asks to watch it, or the change is small
+   enough that a dispatch costs more than it saves (a few lines, a rename, a config value).
+
+   Either way the rule holds: acceptance tests are not edited during Build. If one seems wrong, that
+   is a criteria change — re-dispatch `criteria-author` with the contract and the failing-test
+   evidence only (never the diff), and let it judge behavior-vs-wording.
+
+   While implementers run: check in on any that has been silent past roughly ten minutes by reading
+   its transcript — silence is a signal, usually a denied command or a hung call, not progress.
 4. **Verify.** Run the full check the repo declares (tests, lint, build). Fix until clean. If a
    check is slow or flaky, that is itself a finding — file it.
 5. **Review (fresh).** Dispatch `reviewer` with the rubric — no summary of your reasoning, no

@@ -10,7 +10,7 @@ the competing (rejected) pipeline branch is preserved in [DESIGN.md](DESIGN.md).
 | --- | --- | --- |
 | L1 Verification | fast tests as SLO, rubric-graded done, change-class CI, mutation/property checks | `repo-template/ci/`, `repo-template/rubrics/` |
 | L2 Rules as code | guard hooks, permission allowlist, tiny behavioral CLAUDE.md | `plugin/hooks/`, `repo-template/` |
-| L3 Independence | blind criteria author, fresh-context reviewer (memoryless, read-only) | `plugin/agents/` |
+| L3 Independence | blind criteria author, fresh-context reviewer (memoryless, read-only), background implementer (worktree-isolated) | `plugin/agents/` |
 | L4 Operations | phase ritual, defect loop, security sentinel, fleet ledger | `plugin/skills/`, `fleet-template/` |
 | L5 Learning | incident→mechanism, chronicle index, scheduled measure-then-delete ablation | `plugin/skills/` |
 
@@ -38,6 +38,7 @@ Capability where it pays, economy everywhere else (pricing per MTok in/out, 2026
 | --- | --- | --- |
 | Main session (writing mind) | **Sonnet 5** daily ($3/$15; intro $2/$10) → **Opus 5** ($5/$25) for hard features → **Fable 5** ($10/$50) only for the hardest novel work (consensus/protocol design) | Sonnet 5 is near-Opus on coding/agentic; switch per session with `/model` |
 | `reviewer`, `criteria-author` | **Opus 5** (frontmatter default) | One tier above a Sonnet implementer; review quality degrades measurably on haiku. Panel escalates one reviewer to top tier for core/watched diffs |
+| `implementer` | inherits the session model (no pin) | You choose per session with `/model`; escalate a hard unit by naming a stronger model at dispatch |
 | Explorers, chronicle, sentinel sweeps | **Haiku/Sonnet** | Mechanical read/summarize work |
 | Effort | `high` default; `xhigh` for hard implementation and core-lane review; `low` for mechanical steps | On current models effort is as big a cost lever as model choice |
 
@@ -49,9 +50,10 @@ model at all.
 
 ## Operating model in five lines
 
-One continuous agent per unit of work (writes single-threaded, worktrees for parallel independent
-tasks). Default ritual `/ship`: shape → criteria (blind) → build → verify → fresh review — phases,
-not personas; skippable by change class. Defects via `/fix` (regression test first). Whole-system
+One mind per unit of work, dispatched to a background `implementer` on its own worktree so your TUI
+session stays free for dialogue while code is being written (writes single-threaded per unit;
+parallel worktrees only for independent units). Default ritual `/ship`: shape → criteria (blind) →
+build → verify → fresh review — phases, not personas; skippable by change class. Defects via `/fix` (regression test first). Whole-system
 security monthly via `/sentinel`. Every incident becomes a test, eval, hook, or lint rule — never a
 prose rule. Every model generation, `/ablation` re-measures the harness and deletes what no longer
 earns its place.

@@ -10,6 +10,8 @@ A bug fix without a regression test that would have caught it is not done.
 1. **Reproduce.** Write a failing test that demonstrates the defect. If you cannot reproduce it,
    say so and stop — do not fix blind.
 2. **Fix minimally.** Smallest change to green. Resist adjacent refactoring; file it instead.
+   Most defect fixes are small enough to do in the foreground; dispatch `implementer` in the
+   background when the fix turns out to be substantial, so the operator keeps a session to talk to.
 3. **Verify + fresh review.** Full repo check, then dispatch `reviewer` (the regression test is the
    rubric). PR references the originating issue with `refs #N` — use `closes #N` only when the PR
    resolves the *entire* issue; GitHub ignores any qualifier after the number, and an auto-closed
