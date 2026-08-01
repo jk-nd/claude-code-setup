@@ -33,7 +33,16 @@ Then:
 3. **GitHub side** — walk `ci/HARDENING.md` top to bottom (branch protection + `ci-pass` required
    check + merge queue first; push rulesets on workflows; watched-path review).
 4. **Invariants** — keep `fail-closed.md`, add area files as the repo grows sensitive surfaces.
-5. Start: `cc` in the repo. Try `/groundwork:ship <small feature>` as the shakedown.
+5. **Local tripwire** — `ln -sf ../../ci/pre-commit.sh .git/hooks/pre-commit`. The PreToolUse guard
+   matches the Edit/Write *tools*, so a shell redirect, `sed -i`, another editor, or another agent
+   slips past it; a commit hook sees the staged tree however the change arrived. Both use the same
+   escape: `GW_ALLOW_CONFIG_EDIT=1`.
+6. **Non-Go repos** — `ci/` ships impact-analysis scripts for three stacks: `affected-go-tests.sh`,
+   `affected-ts-tests.sh` (vitest / jest), `affected-py-tests.sh` (pytest-testmon). Point the
+   `test` job in `.github/workflows/ci.yml` at the one you need and delete the others. Each falls
+   back to the full suite whenever it cannot determine impact soundly — a slow job beats a green
+   one that skipped the failing test.
+7. Start: `cc` in the repo. Try `/groundwork:ship <small feature>` as the shakedown.
 
 ## B. Existing repo with the v3 setup
 
@@ -99,6 +108,10 @@ Attach the fleet repo to sessions with `cc --add-dir ~/code/fleet`, then run
   redirect — the guard matches tools, not command strings): it is **blocked**. Escape hatch is
   `GW_ALLOW_CONFIG_EDIT=1` exported when launching the session, not per command.
 - A docs-only PR runs only the classify job; a Go change runs affected-package tests.
+- `echo x >> acceptance/<any>_test.go && git add -A && git commit` is **refused** by the pre-commit
+  hook (this is the path the PreToolUse guard cannot see).
+- `ci/eval-harness.sh` prints the harness's always-resident context cost and any prose that
+  duplicates a mechanism — the input to `/groundwork:ablation`.
 
 ## Updating
 

@@ -76,6 +76,7 @@ jobs:
         with: { fetch-depth: 0, persist-credentials: false }
       - uses: actions/setup-go@v5 # PIN-BY-SHA
         with: { go-version-file: go.mod }
+      # Non-Go stacks: swap in ci/affected-ts-tests.sh or ci/affected-py-tests.sh here.
       - name: tests (affected on PR, full on merge queue and nightly)
         run: |
           set -euo pipefail
