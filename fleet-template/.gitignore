@@ -1,0 +1,2 @@
+# Machine-specific clone locations — never commit (see fleet.local.yaml.example)
+fleet.local.yaml

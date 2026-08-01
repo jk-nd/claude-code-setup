@@ -3,9 +3,9 @@
 ## Get the setup
 
 ```bash
-git clone -b v4 git@github.com:jk-nd/claude-code-setup.git ~/Development/claude-code-setup-v4
-# update later: git -C ~/Development/claude-code-setup-v4 pull
-export GW=~/Development/claude-code-setup-v4
+git clone -b v4 git@github.com:jk-nd/claude-code-setup.git ~/code/groundwork   # any path you like
+export GW=~/code/groundwork                                                    # put this in your shell rc
+# update later: git -C "$GW" pull
 ```
 
 The plugin loads per launch via `claude --plugin-dir "$GW/plugin"` — make it an alias:
@@ -72,11 +72,18 @@ workflow if it carries repo-specific jobs).
 ## C. Fleet (optional, for multi-repo work)
 
 ```bash
-git init ~/Development/fleet && cp -r "$GW/fleet-template/." ~/Development/fleet/
+git init ~/code/fleet && cp -r "$GW/fleet-template/." ~/code/fleet/
 ```
 
-Fill in `fleet.yaml` (repos, produces/consumes edges) and `INTENT.md`. Attach to sessions:
-`cc --add-dir ~/Development/fleet`. Run `/groundwork:chronicle` once to seed `index/`.
+Fill in `fleet.yaml` — repos as GitHub `owner/name` plus their produces/consumes edges — and
+`INTENT.md` (your goals and standing preferences, operator-authored). `fleet.yaml` is deliberately
+machine-independent: **no local clone paths**, because coordination runs on GitHub issues keyed on
+`owner/name`, and committed paths conflict across machines. If a session needs to reach a sibling
+repo's files directly, copy `fleet.local.yaml.example` to `fleet.local.yaml` (gitignored) and put
+paths there.
+
+Attach the fleet repo to sessions with `cc --add-dir ~/code/fleet`, then run
+`/groundwork:chronicle` once to seed `index/`.
 
 ## Verify the install
 

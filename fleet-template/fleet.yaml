@@ -1,22 +1,24 @@
-# Fleet manifest — the one authoritative copy lives in this fleet repo.
-# Sessions attach it read-only (--add-dir); repos hold no mirror.
+# Fleet manifest — the shared view of the repos this fleet coordinates.
+#
+# Checked in, and deliberately machine-independent: repos are identified by their
+# GitHub `owner/name`, which is what the issue ledger keys on and is identical on
+# every machine and for every person. NO local clone paths belong in this file —
+# put those in fleet.local.yaml (gitignored) if you need them at all.
+#
+# Replace every <placeholder> below. Delete the examples.
 
-mode: operator   # operator | auto-coordinate  (mode changes are an operator decision)
+mode: operator          # operator | auto-coordinate  (changing this is an operator decision)
 
 repos:
-  - name: go-mcp-gw
-    path: ~/Development/go-mcp-gw
-    produces: [mcp-gateway-image, gateway-config-schema]
-  - name: noah
-    path: ~/Development/noah-3
-    consumes: [mcp-gateway-image]
-  # - name: ...
+  - repo: <owner>/<producer>        # e.g. acme/api-gateway
+    produces: [<artifact>]          # stable names other repos consume (image, schema, library)
 
-# Cross-repo handoffs: GitHub issues with the `dependencies` label, filed on the CONSUMING repo,
-# linking the producing PR. Issues are the durable ledger; if any automation dies, the ledger
-# still says what is owed to whom.
+  - repo: <owner>/<consumer>
+    consumes: [<artifact>]          # must match a name in some repo's `produces`
 
-topics:   # cross-cutting views the /chronicle skill maintains in index/topics/
-  - authz
-  - mcp-protocol
-  - federation
+# Cross-repo handoffs are GitHub issues labelled `dependencies`, filed on the CONSUMING
+# repo and linking the producing PR. Issues are the durable ledger: if every piece of
+# automation stops, the ledger still records what is owed to whom.
+
+topics:                 # cross-cutting views /chronicle maintains in index/topics/
+  - <topic>             # e.g. authz — a concern that spans several repos

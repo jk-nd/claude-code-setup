@@ -1,0 +1,10 @@
+# Per-machine clone locations. Copy to fleet.local.yaml — which is gitignored, because
+# where you keep your clones differs per machine and must never conflict in review.
+#
+# Optional: cross-repo coordination needs no paths at all (it runs on GitHub issues,
+# keyed on owner/name). This file exists only so a session can reach a sibling repo's
+# files directly, e.g. `claude --add-dir <path>`.
+
+paths:
+  <owner>/<producer>: ~/code/<producer>
+  <owner>/<consumer>: ~/code/<consumer>

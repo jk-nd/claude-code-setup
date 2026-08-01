@@ -9,10 +9,13 @@ disable-model-invocation: true
 Requires a fleet repo (see `fleet-template/`). The index is a *map*: every entry links to the
 canonical artifact; the index itself is never the truth.
 
-1. Read `fleet.yaml` for the repo list.
-2. Per repo, regenerate `index/<repo>.md` (~1 page): what it is, current state (recent merged PRs,
-   open threads), key decisions with dates and links (ADRs, rubrics, release notes), public API
-   surface in one paragraph, active invariants.
+1. Read `fleet.yaml` for the repo list. Repos are identified by GitHub `owner/name` — the manifest
+   carries no local paths by design. Read each repo through `gh` (issues, PRs, releases, file
+   contents); use a local clone only if `fleet.local.yaml` maps that repo to a path, or the repo is
+   already attached to the session.
+2. Per repo, regenerate `index/<name>.md` (~1 page, `<name>` = the part after the slash): what it
+   is, current state (recent merged PRs, open threads), key decisions with dates and links (ADRs,
+   rubrics, release notes), public API surface in one paragraph, active invariants.
 3. Regenerate `index/topics/<topic>.md` for the cross-cutting topics named in `fleet.yaml`
    (e.g. authz, federation, mcp-protocol): the transversal view — which repos touch the topic, the
    standing decisions, the open questions.
