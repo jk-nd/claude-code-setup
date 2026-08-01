@@ -10,6 +10,14 @@ Acceptance tests: <paths>. Status: draft | approved | done.
 | B1 | <a malformed config is loaded> | <refuses to start with a named error — never default-allows> | `<TestX>` |
 | B2 | ... | ... | ... |
 
+## Adversarial behaviors (what must NOT happen — a stub passes the table above; it fails these)
+
+| # | When | The system | Test |
+| --- | --- | --- | --- |
+| N1 | <request has no/invalid credentials> | <rejects with 403 AND makes no downstream call> | `<TestX>` |
+| N2 | <input is malformed> | <hard-errors; never defaults to permissive> | ... |
+| N3 | <a dependency is unavailable> | <fails closed, surfaces the error> | ... |
+
 ## Gradeable criteria (each answerable yes/no with evidence by a reviewer)
 
 - [ ] C1: Every behavior above has a passing test at a stable boundary (API/CLI/HTTP).

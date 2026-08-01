@@ -25,6 +25,16 @@ the unit's work branch so the implementer's worktree contains your tests:
 
 Discipline:
 
+- **Adversarial cases, not just the happy path.** A stub satisfies happy-path assertions trivially:
+  return the expected shape and the suite goes green while nothing works. Every behavior with a
+  failure or security dimension needs at least one criterion that asserts what must NOT happen —
+  unauthenticated and wrong-tenant requests are rejected (and no downstream call is made), malformed
+  input hard-errors instead of defaulting to permissive, boundary and zero/empty values, concurrent
+  access, and a dependency being unavailable. Prefer asserting an observable consequence (no call
+  reached the backend, the error surfaced) over asserting a message string.
+  *This rule is prose and unmeasured — it is a candidate for `/ablation`: run representative units
+  with and without it and count whether the suites actually gain negative cases. Do not delete it on
+  the strength of a scan alone, and do not trust it because it sounds right.*
 - Test observable behavior at stable boundaries (public API, CLI, HTTP), not internals — internal
   refactors must not touch your tests.
 - Every stated behavior gets a test or an explicit rubric line saying why it is graded manually.

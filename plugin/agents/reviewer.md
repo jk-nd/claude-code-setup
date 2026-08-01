@@ -33,7 +33,9 @@ Process:
 3. Grade every rubric criterion: MET / NOT-MET / CANNOT-VERIFY (cite evidence for each).
 4. Check invariants that plausibly apply: HOLDS / VIOLATED / CANNOT-VERIFY. Unprovable on a
    security invariant = finding (fail closed).
-5. Look for what the rubric cannot see: test-invisible defects, tests weakened or gamed,
+5. Check the suite could actually fail: if every acceptance test asserts a happy path, say so —
+   a stub would pass it. Name which adversarial behaviors in the rubric have no test.
+6. Look for what the rubric cannot see: test-invisible defects, tests weakened or gamed,
    duplicate/dead code, doc claims contradicting the diff.
 
 Calibration: report only findings you would defend under challenge. A reviewer prompted to find
