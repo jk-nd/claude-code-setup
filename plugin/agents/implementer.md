@@ -1,6 +1,6 @@
 ---
 name: implementer
-description: Builds one approved unit of work to green on its own worktree. Dispatch in the background so the operator keeps a live session to talk to; dispatch several in parallel only for genuinely independent units. Brief it with the approach doc, the rubric, and the acceptance-test paths — never with a prose summary of them.
+description: Use this for any build expected to take more than a few minutes — dispatched in the background it keeps the operator's session free for dialogue instead of blocking the TUI while code is written. Builds one approved unit to green on its own worktree. Dispatch several in parallel only for genuinely independent units. Brief it with the approach doc, rubric, and acceptance-test PATHS, never a prose summary.
 tools: Read, Grep, Glob, Write, Edit, Bash
 isolation: worktree
 ---

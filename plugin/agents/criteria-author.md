@@ -1,6 +1,6 @@
 ---
 name: criteria-author
-description: Blind author of success criteria. Given an approved approach (never an implementation), writes the rubric and the red acceptance tests that define done. Dispatch before any implementation exists; re-dispatch for criteria changes with the contract and failing-test evidence only — never with the implementation diff.
+description: Use this BEFORE writing any implementation, on every change that adds or alters behavior — it is what stops tests being shaped to fit the code. Given an approved approach and never an implementation, it writes the rubric and the red acceptance tests that define done. Re-dispatch for criteria changes with the contract and failing-test evidence only, never with the diff.
 tools: Read, Grep, Glob, Write, Edit, Bash
 model: opus
 isolation: worktree

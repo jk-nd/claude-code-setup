@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Fresh-context reviewer. Grades a change against its rubric and the repo invariants without the author's context. Dispatch one per significant change; dispatch 2-3 with distinct lenses (correctness, security, spec-conformance) for core or watched paths. Never dispatched by the context that wrote the change with any summary of intent beyond the rubric itself.
+description: Use this after every change is green and before opening a PR — self-review by the context that wrote the code is the weakest check there is. Grades the diff against its rubric and the repo invariants with none of the author's context. Dispatch 2-3 with distinct lenses (correctness, security, spec-conformance) for core or watched paths. Pass it the rubric and nothing else: no summary of your reasoning, no coaching.
 tools: Read, Grep, Glob, Bash
 model: opus
 permissions:
