@@ -1,89 +1,196 @@
 # Change-class-routed CI: docs merges never run the Go suite; PRs run affected-package tests;
-# the merge queue runs the full suite. `ci-pass` is the single required check — fail-closed.
-# Install as .github/workflows/ci.yml. Pin actions by SHA before first use (see HARDENING.md).
+# the merge queue and the nightly run the full suite. `ci-pass` is the single required check and
+# fails closed — including when the classifier produces no class at all.
+#
+# Install as .github/workflows/ci.yml (scripts stay in ci/). Before your first watched-path PR:
+# replace every `# PIN-BY-SHA` tag with a commit SHA and set ZIZMOR_VERSION (see ci/HARDENING.md).
 name: ci
 on:
   pull_request:
   merge_group:
+  schedule:
+    - cron: "0 3 * * *"   # nightly full suite
 
 permissions:
   contents: read
 
+concurrency:
+  # Supersede stale PR runs; never cancel a merge-queue or nightly run.
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  ZIZMOR_VERSION: ""        # SET ME, e.g. "1.5.2" — unset fails workflow-lint loudly, never silently
+
 jobs:
   classify:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       code: ${{ steps.c.outputs.code }}
       watched: ${{ steps.c.outputs.watched }}
     steps:
       - uses: actions/checkout@v4 # PIN-BY-SHA
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, persist-credentials: false }
       - id: c
         run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "code=true"    >> "$GITHUB_OUTPUT"
+            echo "watched=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           base="${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}"
-          files=$(git diff --name-only "$base" HEAD)
+          [ -n "$base" ] || { echo "::error::no base sha for this event"; exit 1; }
+          # --no-renames: without it a Go file moved under docs/ or to a .md name shows only the
+          # destination, and the removal of real Go source classifies as docs-only.
+          files=$(git diff --no-renames --name-only "$base" HEAD)
           echo "$files"
+
           code=false; watched=false
-          echo "$files" | grep -qvE '^(docs/|.*\.md$|LICENSE|\.gitignore)' && code=true
-          echo "$files" | grep -qE '^(\.github/|go\.mod|go\.sum|CODEOWNERS)' && watched=true
-          echo "code=$code" >> "$GITHUB_OUTPUT"
+          # Docs = fully-anchored doc/asset paths only. A .go file is never "docs", wherever it
+          # lives (docs/gen.go is compiled by go build ./...), and LICENSE must match exactly,
+          # not as a prefix of LICENSEmanager.go.
+          if echo "$files" | grep -qvE '^(docs/.*\.(md|png|jpe?g|svg|gif)|.*\.md|LICENSE|\.gitignore)$'; then
+            code=true
+          fi
+          # CODEOWNERS is honored by GitHub at the repo root, .github/, AND docs/ — all three are
+          # watched, or the file deciding who must review agent PRs could be edited unchecked.
+          if echo "$files" | grep -qE '(^|/)CODEOWNERS$|^\.github/|^go\.(mod|sum|work|work\.sum)$'; then
+            watched=true
+          fi
+          # A toolchain directive change is watched regardless of which file carries it.
+          if git diff --no-renames -U0 "$base" HEAD -- go.mod go.work 2>/dev/null | grep -q '^[+-]toolchain '; then
+            watched=true
+          fi
+          echo "code=$code"       >> "$GITHUB_OUTPUT"
           echo "watched=$watched" >> "$GITHUB_OUTPUT"
 
   test:
     needs: classify
     if: needs.classify.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4 # PIN-BY-SHA
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, persist-credentials: false }
       - uses: actions/setup-go@v5 # PIN-BY-SHA
         with: { go-version-file: go.mod }
-      - name: tests (affected on PR, full on merge queue)
+      - name: tests (affected on PR, full on merge queue and nightly)
         run: |
-          if [ "${{ github.event_name }}" = "merge_group" ]; then
-            go test -race ./...
-          else
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
             bash ci/affected-go-tests.sh "${{ github.event.pull_request.base.sha }}"
+          else
+            go test -race ./...
           fi
+
+  acceptance:
+    # The rubric's acceptance suite defines "done". It sits behind the `acceptance` build tag, so
+    # `go test ./...` neither runs NOR COMPILES it — it needs its own tagged job or it is invisible.
+    needs: classify
+    if: needs.classify.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4 # PIN-BY-SHA
+        with: { persist-credentials: false }
+      - uses: actions/setup-go@v5 # PIN-BY-SHA
+        with: { go-version-file: go.mod }
+      - name: acceptance suite
+        run: |
+          set -euo pipefail
+          if [ ! -d acceptance ]; then
+            echo "::notice::no acceptance/ directory yet — nothing to run. Whether this change" \
+                 "needed a rubric and acceptance tests is the reviewer's call, not CI's."
+            exit 0
+          fi
+          go vet -tags acceptance ./acceptance/...
+          go test -race -tags acceptance ./acceptance/...
 
   lint:
     needs: classify
     if: needs.classify.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4 # PIN-BY-SHA
+        with: { persist-credentials: false }
       - uses: actions/setup-go@v5 # PIN-BY-SHA
         with: { go-version-file: go.mod }
       - uses: golangci/golangci-lint-action@v6 # PIN-BY-SHA
-        with: { args: --timeout=5m }
+        with:
+          version: v1.64.8            # pin the BINARY too — pinning the action does not pin it
+          args: --timeout=5m --build-tags=acceptance
 
   workflow-lint:
     needs: classify
     if: needs.classify.outputs.watched == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4 # PIN-BY-SHA
+        with: { persist-credentials: false }
       - name: zizmor (workflow security audit)
-        run: pipx run zizmor .github/workflows/
+        run: |
+          set -euo pipefail
+          if [ -z "${ZIZMOR_VERSION}" ]; then
+            echo "::error::ZIZMOR_VERSION is unset in ci.yml. An unpinned runtime fetch is exactly" \
+                 "what this job exists to catch. Pin it before touching watched paths."
+            exit 1
+          fi
+          # --min-severity=high until you SHA-pin the actions above; then tighten to medium.
+          pipx run "zizmor==${ZIZMOR_VERSION}" --min-severity=high .github/workflows/
+
+  watched-approval:
+    # Watched paths need a human approval that is not the PR author's. Fails closed.
+    needs: classify
+    if: needs.classify.outputs.watched == 'true' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: require a non-author human approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          approvals=$(gh api "repos/${{ github.repository }}/pulls/${PR}/reviews" \
+            --jq "[.[] | select(.state == \"APPROVED\") | select(.user.login != \"${AUTHOR}\")
+                   | select(.user.type != \"Bot\") | .user.login] | unique | length")
+          echo "distinct non-author human approvals: ${approvals}"
+          [ "${approvals}" -ge 1 ] || {
+            echo "::error::watched paths require an approving review from a human who is not the" \
+                 "PR author. Review it yourself and re-run this check."; exit 1; }
 
   ci-pass:
-    # The one required check. Fail-closed: fails on any failed/cancelled dependency, and treats
-    # skipped jobs as success ONLY when the classifier skipped them by change class.
-    needs: [classify, test, lint, workflow-lint]
+    # The one required check. Fails closed: an unrecognized change class is an error, never a pass.
+    needs: [classify, test, acceptance, lint, workflow-lint, watched-approval]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - run: |
           fail() { echo "::error::$1"; exit 1; }
           [ "${{ needs.classify.result }}" = "success" ] || fail "classify failed"
+          case "${{ needs.classify.outputs.code }}"    in true|false) ;; *) fail "classify produced no code class" ;; esac
+          case "${{ needs.classify.outputs.watched }}" in true|false) ;; *) fail "classify produced no watched class" ;; esac
           if [ "${{ needs.classify.outputs.code }}" = "true" ]; then
-            [ "${{ needs.test.result }}" = "success" ] || fail "tests not green"
-            [ "${{ needs.lint.result }}" = "success" ] || fail "lint not green"
+            [ "${{ needs.test.result }}"       = "success" ] || fail "tests not green"
+            [ "${{ needs.acceptance.result }}" = "success" ] || fail "acceptance suite not green"
+            [ "${{ needs.lint.result }}"       = "success" ] || fail "lint not green"
           fi
           if [ "${{ needs.classify.outputs.watched }}" = "true" ]; then
             [ "${{ needs.workflow-lint.result }}" = "success" ] || fail "workflow lint not green"
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              [ "${{ needs.watched-approval.result }}" = "success" ] || fail "watched paths lack a non-author human approval"
+            fi
           fi
-          case "${{ needs.test.result }}${{ needs.lint.result }}${{ needs.workflow-lint.result }}" in
-            *failure*|*cancelled*) fail "a dependency failed" ;;
+          case "${{ needs.test.result }}|${{ needs.acceptance.result }}|${{ needs.lint.result }}|${{ needs.workflow-lint.result }}|${{ needs.watched-approval.result }}" in
+            *failure*|*cancelled*) fail "a dependency failed or was cancelled" ;;
           esac
           echo "ci-pass: green"

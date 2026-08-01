@@ -8,7 +8,7 @@ the competing (rejected) pipeline branch is preserved in [DESIGN.md](DESIGN.md).
 
 | Layer | What | Lives in |
 | --- | --- | --- |
-| L1 Verification | fast tests as SLO, rubric-graded done, change-class CI, mutation/property checks | `repo-template/ci/`, `repo-template/rubrics/` |
+| L1 Verification | rubric-graded done, change-class CI, tagged acceptance job, affected-package test selection | `repo-template/ci/`, `repo-template/rubrics/` |
 | L2 Rules as code | guard hooks, permission allowlist, tiny behavioral CLAUDE.md | `plugin/hooks/`, `repo-template/` |
 | L3 Independence | blind criteria author, fresh-context reviewer (memoryless, read-only), background implementer (worktree-isolated) | `plugin/agents/` |
 | L4 Operations | phase ritual, defect loop, security sentinel, fleet ledger | `plugin/skills/`, `fleet-template/` |
@@ -22,13 +22,26 @@ repo-template/    what a consuming repo carries (copy once, then own it)
 fleet-template/   the control-repo files for multi-repo operation (copy to a small `fleet` repo)
 ```
 
-## Install (per repo)
+## Install
 
-1. `claude --plugin-dir /path/to/plugin` (or publish `plugin/` to a private marketplace and pin).
-2. Copy `repo-template/CLAUDE.md` to the repo root; fill in the Environment facts section.
-3. Copy `repo-template/.claude/settings.json` (adjust the allowlist to the repo's stack).
-4. Copy `repo-template/ci/` workflows; wire branch protection + merge queue per `ci/HARDENING.md`.
-5. Optional, multi-repo: create a `fleet` repo from `fleet-template/`; add `--add-dir` to sessions.
+See **[INSTALL.md](INSTALL.md)** — new repo, migration from v3, and fleet setup, with the exact
+commands. Don't improvise from this page; the copy order matters (`cp -r` overwrites) and the CI
+workflow has to move into `.github/workflows/`.
+
+Prerequisites: `git`, the `gh` CLI authenticated (`gh auth login` — the skills read PRs, issues,
+and releases through it), and Go plus `golangci-lint` for the Go template.
+
+## Not implemented yet
+
+Named in the design, deliberately absent from this build — don't read the design record as a
+description of what ships:
+
+- mutation testing, property/DST harnesses, evals-as-tests for AI behavior
+- test-speed and flake-rate SLOs (nothing measures them)
+- scheduling: `/sentinel`, `/chronicle`, and `/ablation` say "run monthly/weekly" but ship no cron
+  or routine — they are manual today
+- the morning digest, USD circuit-breakers for unattended runs, per-repo configurable watched paths
+  (the watched class is a regex in `ci.yml` you edit by hand)
 
 ## Models and cost
 
@@ -40,7 +53,7 @@ Capability where it pays, economy everywhere else (pricing per MTok in/out, 2026
 | `reviewer`, `criteria-author` | **Opus 5** (frontmatter default) | One tier above a Sonnet implementer; review quality degrades measurably on haiku. Panel escalates one reviewer to top tier for core/watched diffs |
 | `implementer` | inherits the session model (no pin) | You choose per session with `/model`; escalate a hard unit by naming a stronger model at dispatch |
 | Explorers, chronicle, sentinel sweeps | **Haiku/Sonnet** | Mechanical read/summarize work |
-| Effort | `high` default; `xhigh` for hard implementation and core-lane review; `low` for mechanical steps | On current models effort is as big a cost lever as model choice |
+| Effort | session-level only (`/effort`, or `effortLevel` in settings) — there is no per-agent or per-dispatch effort override | On current models effort is as big a cost lever as model choice |
 
 Two settings worth checking in `~/.claude/settings.json`: a global `effortLevel: xhigh` plus a
 top-tier default `model` applies maximum spend to *everything*, including trivial turns and every

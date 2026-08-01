@@ -1,7 +1,3 @@
----
-paths: ["**/*_test.go", "acceptance/**"]
----
-
 # Testing rules
 
 - Acceptance tests (owned by criteria-author, keyed to a rubric) live in `acceptance/` behind the

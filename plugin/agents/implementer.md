@@ -18,10 +18,12 @@ already settled.
 1. Read the surrounding code before changing it. Match its idiom, naming, and comment density.
 2. Implement until the acceptance tests pass and the repo's full check (tests, lint, build) is
    clean. Write your own unit tests freely.
-3. **Never edit the acceptance tests.** A hook blocks it, but the reason matters: those tests are
-   the contract you are being measured against. If one looks wrong, stop and return
-   `needs-clarification` with the failing output — the criteria-author judges whether the behavior
-   or only the wording was off.
+3. **Never edit the acceptance tests or the rubric.** A PreToolUse guard blocks Edit/Write on those
+   paths — but it cannot see inside a shell command, so treat the rule as binding regardless of
+   what the tooling catches. The reason matters more than the mechanism: those tests are the
+   contract you are being measured against, and an implementation that edits its own contract
+   proves nothing. If one looks wrong, stop and return `needs-clarification` with the failing
+   output — criteria-author judges whether the behavior or only the wording was off.
 4. Update docs touched by the change in the same diff.
 5. Commit on your own branch. **Before committing, verify you are on the branch you were dispatched
    onto.** If the worktree is gone or the branch differs, STOP and say so — committing into a

@@ -28,8 +28,17 @@ unit; parallelize only genuinely independent units, each in its own worktree.
    operator only when shapes genuinely diverge or scope/security is at stake. Present the decision
    in plain language: stakes first, 2-4 options, recommendation. **Operator approves the approach.**
 2. **Criteria (blind).** Dispatch `criteria-author` with the approved approach. It writes the
-   rubric + red acceptance tests without seeing any implementation. The operator reads the behavior
-   table (not the test code); escalate to them only if criteria and approach seem to diverge.
+   rubric + red acceptance tests on its own worktree without seeing any implementation, and returns
+   its branch name. The operator reads the behavior table (not the test code); escalate only if
+   criteria and approach seem to diverge.
+
+   **Then establish the work branch — the build cannot start without this.** Worktree-isolated
+   agents branch from whatever the main checkout has at HEAD (`worktree.baseRef: "head"`, set in
+   the repo template). So: `git checkout -B work/<slug>` and merge the criteria branch into it
+   before phase 3. Skip this and the implementer's worktree branches off main, the acceptance tests
+   are absent, and every path you hand it fails to resolve. Rubric, tests, and implementation all
+   land on `work/<slug>` and ship as one PR — which is also what lets CI require the acceptance
+   suite green without ever blocking on a half-finished contract.
 3. **Build — dispatch, don't absorb.** Default: dispatch `implementer` **in the background** with
    the approach doc path, the rubric path, and the acceptance-test paths. It runs on its own
    worktree; you return to the operator immediately and stay available for dialogue — reviewing the
@@ -55,7 +64,8 @@ unit; parallelize only genuinely independent units, each in its own worktree.
 ## Model escalation
 
 The reviewer and criteria-author default to Opus. Escalate at dispatch, don't run everything at the
-top: for core/watched diffs, run one panel reviewer on the session's top-tier model at xhigh effort;
+top: for core/watched diffs, run one panel reviewer on the top-tier model (model IS overridable per
+dispatch; effort is session-level only, so raise it with /effort if the whole session warrants it);
 for routine diffs the Opus default suffices. Read-only exploration subagents run on haiku. If the
 session itself is on a mid-tier model and the work turns out to be genuinely hard (novel protocol
 design, subtle concurrency), tell the operator to restart the phase on a stronger model rather than

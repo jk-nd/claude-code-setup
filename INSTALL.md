@@ -42,8 +42,10 @@ Remove first, then copy — the v3 leftovers' main cost is context weight loaded
 **Delete** (git history preserves everything):
 
 ```bash
-git rm -r .claude/agents .claude/skills .claude/commands .claude/hooks
-git rm AGENTS.md .claude/settings.json          # AGENTS.md loads into EVERY session's context
+# --ignore-unmatch on every line: without it, ONE missing path aborts the whole command and
+# removes nothing — silently leaving the context weight this step exists to delete.
+git rm -r --ignore-unmatch .claude/agents .claude/skills .claude/commands .claude/hooks
+git rm --ignore-unmatch AGENTS.md .claude/settings.json   # AGENTS.md loads into EVERY session
 git rm -r --ignore-unmatch docs/templates scripts/second-opinion.py scripts/context-budget.py
 ```
 
@@ -57,14 +59,17 @@ git rm -r --ignore-unmatch docs/templates scripts/second-opinion.py scripts/cont
 | `trust-boundary.yml`, CODEOWNERS, branch protection | untouched — reconcile against `ci/HARDENING.md` |
 | `WATCHED_PATHS` notion | lives on as the `watched` class in `.github/workflows/ci.yml` + CODEOWNERS |
 
-**Then copy the template** (won't overwrite what you kept):
+**Then copy the template.** `cp -r` **overwrites**, so preserve anything you're keeping first:
 
 ```bash
-cp -r "$GW/repo-template/." .
-mkdir -p .github/workflows && mv ci/ci.yml .github/workflows/ci.yml
+[ -f CLAUDE.md ] && cp CLAUDE.md CLAUDE.md.v3           # keep your facts; merged back below
+[ -d invariants ] && cp -r invariants invariants.v3
+cp -rn "$GW/repo-template/." .                          # -n: never clobber what already exists
+mkdir -p .github/workflows && mv -n ci/ci.yml .github/workflows/ci.yml
 ```
 
-Merge your old repo-specific CLAUDE.md facts (if any) into the new CLAUDE.md's Environment facts;
+Merge your old repo-specific facts from `CLAUDE.md.v3` into the new CLAUDE.md's Environment facts
+(then delete the `.v3` copies);
 re-add repo-specific permission allows to `.claude/settings.json`. Replace v3's `ci.yml` job shape
 with the new change-class router (or graft the `classify`/`ci-pass` pattern into your existing
 workflow if it carries repo-specific jobs).
@@ -87,10 +92,12 @@ Attach the fleet repo to sessions with `cc --add-dir ~/code/fleet`, then run
 
 ## Verify the install
 
-- `cc` → the SessionStart hook prints a working-tree snapshot on launch.
+- `cc` → the session opens knowing your branch, uncommitted count, and any open stashes
+  (injected by the SessionStart hook).
 - `/groundwork:` tab-completes to ship / fix / sentinel / ablation / chronicle.
-- `echo test > .golangci.yml` via the agent gets **blocked** by guard-config (escape:
-  `GW_ALLOW_CONFIG_EDIT=1`).
+- Ask the agent to *edit* `acceptance/` or `.golangci.yml` (an Edit/Write call, not a shell
+  redirect — the guard matches tools, not command strings): it is **blocked**. Escape hatch is
+  `GW_ALLOW_CONFIG_EDIT=1` exported when launching the session, not per command.
 - A docs-only PR runs only the classify job; a Go change runs affected-package tests.
 
 ## Updating

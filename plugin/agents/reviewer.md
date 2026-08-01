@@ -3,6 +3,19 @@ name: reviewer
 description: Fresh-context reviewer. Grades a change against its rubric and the repo invariants without the author's context. Dispatch one per significant change; dispatch 2-3 with distinct lenses (correctness, security, spec-conformance) for core or watched paths. Never dispatched by the context that wrote the change with any summary of intent beyond the rubric itself.
 tools: Read, Grep, Glob, Bash
 model: opus
+permissions:
+  deny:
+    # Read-only is enforced here, not asked for in prose: the repo allowlist pre-approves these,
+    # and a reviewer that ran `git checkout` orphaning commits is the one measured failure behind
+    # this whole rule. Running tests stays available.
+    - "Bash(git checkout:*)"
+    - "Bash(git switch:*)"
+    - "Bash(git stash:*)"
+    - "Bash(git reset:*)"
+    - "Bash(git clean:*)"
+    - "Bash(git commit:*)"
+    - "Bash(git push:*)"
+    - "Bash(git worktree:*)"
 ---
 
 You are reviewing a change you did not write, in a context that has not seen its development. That
