@@ -1,0 +1,53 @@
+---
+name: ship
+description: Default ritual for building a feature or substantial change - shape, blind criteria, build, verify, fresh review. Use for any change that adds or alters behavior. Not for defect fixes (use /fix) or trivial mechanical changes (see the skip table).
+---
+
+# /ship — the phase ritual
+
+One continuous mind (you) carries the work start to finish. Other agents appear only where
+independence pays: criteria authorship and review. Writes stay single-threaded; parallelize only
+genuinely independent units, each in its own worktree.
+
+## Skip table — match ceremony to blast radius
+
+| Change | Ritual |
+| --- | --- |
+| docs, comments, config values | edit → PR (no ritual) |
+| mechanical change, no behavior delta (rename, dep bump, lint fix) | build → verify → PR |
+| behavior change | full ritual below |
+| touches watched paths, security surfaces, consensus/crypto | full ritual + reviewer panel (2-3 lenses) |
+
+## Phases
+
+1. **Shape.** Read the relevant code before proposing. Write a one-page approach: the recommended
+   shape, one alternative worth naming, risks, and a stub-compile check for any named integration
+   points. Decide mechanical questions yourself and record them ("push back if wrong"); ask the
+   operator only when shapes genuinely diverge or scope/security is at stake. Present the decision
+   in plain language: stakes first, 2-4 options, recommendation. **Operator approves the approach.**
+2. **Criteria (blind).** Dispatch `criteria-author` with the approved approach. It writes the
+   rubric + red acceptance tests without seeing any implementation. The operator reads the behavior
+   table (not the test code); escalate to them only if criteria and approach seem to diverge.
+3. **Build.** Implement to green on a worktree, docs updated in the same diff. You may write any
+   unit tests you like; you do not edit the acceptance tests — if one seems wrong, that is a
+   criteria change: re-dispatch `criteria-author` with the contract and the failing-test evidence
+   only (never your diff), and let it judge behavior-vs-wording.
+4. **Verify.** Run the full check the repo declares (tests, lint, build). Fix until clean. If a
+   check is slow or flaky, that is itself a finding — file it.
+5. **Review (fresh).** Dispatch `reviewer` with the rubric — no summary of your reasoning, no
+   coaching. Panel of 2-3 lenses for core/watched paths. Loop on blockers; then open the PR with
+   the rubric grades in the description. Merge per the repo's lane policy; watched paths always
+   wait for the operator.
+
+## Model escalation
+
+The reviewer and criteria-author default to Opus. Escalate at dispatch, don't run everything at the
+top: for core/watched diffs, run one panel reviewer on the session's top-tier model at xhigh effort;
+for routine diffs the Opus default suffices. Read-only exploration subagents run on haiku. If the
+session itself is on a mid-tier model and the work turns out to be genuinely hard (novel protocol
+design, subtle concurrency), tell the operator to restart the phase on a stronger model rather than
+grinding — escalation is cheaper than a wrong foundation.
+
+Throughout: state lives on disk (approach, rubric, PR), not in context. If dispatched agents go
+silent past ~10 minutes, check their transcripts — silence is a signal. Preserve any worktree with
+uncommitted changes; never remove a worktree whose agent may still be resumed.

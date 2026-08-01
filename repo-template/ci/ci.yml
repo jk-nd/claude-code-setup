@@ -1,0 +1,89 @@
+# Change-class-routed CI: docs merges never run the Go suite; PRs run affected-package tests;
+# the merge queue runs the full suite. `ci-pass` is the single required check — fail-closed.
+# Install as .github/workflows/ci.yml. Pin actions by SHA before first use (see HARDENING.md).
+name: ci
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.c.outputs.code }}
+      watched: ${{ steps.c.outputs.watched }}
+    steps:
+      - uses: actions/checkout@v4 # PIN-BY-SHA
+        with: { fetch-depth: 0 }
+      - id: c
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}"
+          files=$(git diff --name-only "$base" HEAD)
+          echo "$files"
+          code=false; watched=false
+          echo "$files" | grep -qvE '^(docs/|.*\.md$|LICENSE|\.gitignore)' && code=true
+          echo "$files" | grep -qE '^(\.github/|go\.mod|go\.sum|CODEOWNERS)' && watched=true
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "watched=$watched" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: classify
+    if: needs.classify.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # PIN-BY-SHA
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5 # PIN-BY-SHA
+        with: { go-version-file: go.mod }
+      - name: tests (affected on PR, full on merge queue)
+        run: |
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            go test -race ./...
+          else
+            bash ci/affected-go-tests.sh "${{ github.event.pull_request.base.sha }}"
+          fi
+
+  lint:
+    needs: classify
+    if: needs.classify.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # PIN-BY-SHA
+      - uses: actions/setup-go@v5 # PIN-BY-SHA
+        with: { go-version-file: go.mod }
+      - uses: golangci/golangci-lint-action@v6 # PIN-BY-SHA
+        with: { args: --timeout=5m }
+
+  workflow-lint:
+    needs: classify
+    if: needs.classify.outputs.watched == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # PIN-BY-SHA
+      - name: zizmor (workflow security audit)
+        run: pipx run zizmor .github/workflows/
+
+  ci-pass:
+    # The one required check. Fail-closed: fails on any failed/cancelled dependency, and treats
+    # skipped jobs as success ONLY when the classifier skipped them by change class.
+    needs: [classify, test, lint, workflow-lint]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          fail() { echo "::error::$1"; exit 1; }
+          [ "${{ needs.classify.result }}" = "success" ] || fail "classify failed"
+          if [ "${{ needs.classify.outputs.code }}" = "true" ]; then
+            [ "${{ needs.test.result }}" = "success" ] || fail "tests not green"
+            [ "${{ needs.lint.result }}" = "success" ] || fail "lint not green"
+          fi
+          if [ "${{ needs.classify.outputs.watched }}" = "true" ]; then
+            [ "${{ needs.workflow-lint.result }}" = "success" ] || fail "workflow lint not green"
+          fi
+          case "${{ needs.test.result }}${{ needs.lint.result }}${{ needs.workflow-lint.result }}" in
+            *failure*|*cancelled*) fail "a dependency failed" ;;
+          esac
+          echo "ci-pass: green"

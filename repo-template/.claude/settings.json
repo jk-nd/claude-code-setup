@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build:*)", "Bash(go test:*)", "Bash(go vet:*)", "Bash(go mod tidy)",
+      "Bash(gofmt:*)", "Bash(golangci-lint run:*)", "Bash(make:*)",
+      "Bash(git status:*)", "Bash(git log:*)", "Bash(git diff:*)", "Bash(git show:*)",
+      "Bash(git add:*)", "Bash(git commit:*)", "Bash(git push origin:*)",
+      "Bash(git stash:*)", "Bash(git worktree:*)", "Bash(git branch:*)", "Bash(git checkout:*)",
+      "Bash(gh pr view:*)", "Bash(gh pr list:*)", "Bash(gh pr diff:*)", "Bash(gh pr checks:*)",
+      "Bash(gh pr create:*)", "Bash(gh pr comment:*)",
+      "Bash(gh issue view:*)", "Bash(gh issue list:*)", "Bash(gh issue create:*)",
+      "Bash(gh run view:*)", "Bash(gh run list:*)",
+      "Bash(jq:*)", "Bash(rg:*)", "Bash(timeout:*)"
+    ],
+    "deny": [
+      "Bash(sudo:*)", "Bash(gh secret:*)", "Bash(gh repo delete:*)", "Bash(gh repo edit:*)",
+      "Bash(gh release delete:*)", "Bash(ssh:*)", "Bash(scp:*)",
+      "Read(.env)", "Read(.env.*)", "Read(**/credentials*)"
+    ]
+  }
+}

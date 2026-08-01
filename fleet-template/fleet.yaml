@@ -1,0 +1,22 @@
+# Fleet manifest — the one authoritative copy lives in this fleet repo.
+# Sessions attach it read-only (--add-dir); repos hold no mirror.
+
+mode: operator   # operator | auto-coordinate  (mode changes are an operator decision)
+
+repos:
+  - name: go-mcp-gw
+    path: ~/Development/go-mcp-gw
+    produces: [mcp-gateway-image, gateway-config-schema]
+  - name: noah
+    path: ~/Development/noah-3
+    consumes: [mcp-gateway-image]
+  # - name: ...
+
+# Cross-repo handoffs: GitHub issues with the `dependencies` label, filed on the CONSUMING repo,
+# linking the producing PR. Issues are the durable ledger; if any automation dies, the ledger
+# still says what is owed to whom.
+
+topics:   # cross-cutting views the /chronicle skill maintains in index/topics/
+  - authz
+  - mcp-protocol
+  - federation

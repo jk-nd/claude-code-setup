@@ -1,0 +1,7 @@
+{
+  "name": "groundwork",
+  "description": "Lean verification-first harness: phase ritual, blind criteria, fresh-context review, guard hooks, security sentinel, ablation ritual",
+  "version": "4.0.0",
+  "author": { "name": "Juerg Kobler" },
+  "license": "Apache-2.0"
+}
