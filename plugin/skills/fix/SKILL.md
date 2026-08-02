@@ -1,6 +1,6 @@
 ---
 name: fix
-description: Defect-fix loop - reproduce as a failing regression test first, minimal fix to green, fresh review, and the incident-to-mechanism step. Use for any bug, regression, or escaped defect. For production-down emergencies see the break-glass section.
+description: Use this the moment a bug, regression, or escaped defect is reported - before attempting a fix. Reproduces it as a failing regression test first, then minimal fix to green, fresh review, and the incident-to-mechanism step. For production-down emergencies see the break-glass section.
 ---
 
 # /fix — regression test first

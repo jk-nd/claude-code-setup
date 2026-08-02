@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Default ritual for building a feature or substantial change - shape, blind criteria, build, verify, fresh review. Use for any change that adds or alters behavior. Not for defect fixes (use /fix) or trivial mechanical changes (see the skip table).
+description: Use this at the START of any request to build, add, implement, or change a feature - before writing code, not after. Runs the delivery ritual: shape and get the approach approved, author criteria blind, build, verify, fresh review. Not for defect fixes (use /fix) or trivial mechanical changes.
 ---
 
 # /ship — the phase ritual

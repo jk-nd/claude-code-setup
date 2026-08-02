@@ -42,7 +42,11 @@ Then:
    `test` job in `.github/workflows/ci.yml` at the one you need and delete the others. Each falls
    back to the full suite whenever it cannot determine impact soundly — a slow job beats a green
    one that skipped the failing test.
-7. Start: `cc` in the repo. Try `/groundwork:ship <small feature>` as the shakedown.
+7. **Involvement** — the session asks once how involved you want to be and records the answer in
+   `.claude/involvement` (`gated` | `checkpoint` | `autonomous`). Set it yourself to skip the
+   question. Unset defaults to asking, not to silence: without it a long run front-loads its
+   questions into the design phase and then goes dark for hours.
+8. Start: `cc` in the repo. Try `/groundwork:ship <small feature>` as the shakedown.
 
 ## B. Existing repo with the v3 setup
 

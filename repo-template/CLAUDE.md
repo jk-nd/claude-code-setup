@@ -12,6 +12,15 @@ Harness: groundwork v4. Rituals: `/ship` (features), `/fix` (defects), `/sentine
 - **Decide vs ask**: decide mechanical questions, record them with "push back if wrong"; ask only
   on diverging shapes, scope, security, or operator-UX. Target ~3 decides per ask. One question at
   a time.
+- **The approval points, wherever the work started.** Approach before criteria; criteria before
+  implementation; watched-path changes before merge. These bind whether or not `/ship` was invoked
+  — the ritual is a procedure, these are the gates, and a gate that only exists inside a skill is
+  not a gate. Your standing involvement mode (injected at session start from `.claude/involvement`)
+  says how much more than this the operator wants; when it is unset, ask before the first
+  substantial task rather than defaulting to silence.
+- **Surface reversible decisions when you make them**, in one line, not only in the closing report.
+  A decision the operator would have reversed costs minutes if raised at the time and a rewrite if
+  raised fourteen hours later. Batch them at phase boundaries if you are running unattended.
 - **Two dispatches are not optional**, because they are the only things separating this from
   marking your own homework. Before writing an implementation, dispatch `criteria-author` to write
   the rubric and acceptance tests — it must not have seen an implementation, or the tests get
