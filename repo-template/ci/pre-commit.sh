@@ -17,6 +17,10 @@
 #   ln -sf ../../ci/pre-commit.sh .git/hooks/pre-commit
 # Escape (per command, and the right move when a feature is genuinely being removed):
 #   GW_ALLOW_CONFIG_EDIT=1 git commit -m "..."
+#
+# NOTE: criteria-author must use that flag routinely. Unlike the PreToolUse guard — which reads
+# `agent_type` from its payload and lets criteria-author through — a git hook cannot tell who is
+# committing, so the contract's legitimate author declares itself with the flag.
 set -uo pipefail
 
 [ "${GW_ALLOW_CONFIG_EDIT:-0}" = "1" ] && exit 0

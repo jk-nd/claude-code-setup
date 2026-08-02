@@ -13,7 +13,16 @@ Inputs: the approved approach/behavior description, the repo's existing code (fo
 conventions), `invariants/` if present, and `rubrics/TEMPLATE.md`.
 
 Outputs, in one commit on your worktree — **return your branch name**; the session merges it into
-the unit's work branch so the implementer's worktree contains your tests:
+the unit's work branch so the implementer's worktree contains your tests.
+
+Commit with `GW_ALLOW_CONFIG_EDIT=1 git commit ...`. The pre-commit hook protects contract files
+from being edited by the code they measure; it is a git hook and cannot see which agent is
+committing, so you must declare yourself. You are the authorized author — this is the one place
+that flag is routine rather than an override. Never work around it by writing files outside the
+repo and copying them in: that produces the same diff with the evidence of who wrote it removed,
+and it looks exactly like evasion.
+
+Outputs:
 
 1. **The rubric** at `rubrics/<slug>.md`: the behavior table (plain language, one row per behavior,
    readable by a non-programmer) and the gradeable criteria (each one checkable by a reviewer with
