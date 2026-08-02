@@ -29,8 +29,14 @@ unit; parallelize only genuinely independent units, each in its own worktree.
    in plain language: stakes first, 2-4 options, recommendation. **Operator approves the approach.**
 2. **Criteria (blind).** Dispatch `criteria-author` with the approved approach. It writes the
    rubric + red acceptance tests on its own worktree without seeing any implementation, and returns
-   its branch name. The operator reads the behavior table (not the test code); escalate only if
-   criteria and approach seem to diverge.
+   its branch name.
+
+   **Show the operator the behavior table and the adversarial table — not the test code.** This is
+   the last cheap moment to redirect: after this, changing what "done" means costs an implementation.
+   Whether you wait for approval depends on the involvement mode injected at session start — `gated`
+   and `checkpoint` wait here; `autonomous` posts the tables and continues. "Escalate only if it
+   diverges" is not the rule: you are the wrong judge of whether criteria match an intent you
+   inferred.
 
    **Then establish the work branch — the build cannot start without this.** Worktree-isolated
    agents branch from whatever the main checkout has at HEAD (`worktree.baseRef: "head"`, set in
@@ -60,6 +66,20 @@ unit; parallelize only genuinely independent units, each in its own worktree.
    coaching. Panel of 2-3 lenses for core/watched paths. Loop on blockers; then open the PR with
    the rubric grades in the description. Merge per the repo's lane policy; watched paths always
    wait for the operator.
+
+   **With no git remote there is no PR, so that gate silently does not exist.** In that case the
+   merge to the trunk branch IS the gate: summarise what shipped and what you decided, and let the
+   operator say go — unless the mode is `autonomous`.
+
+## Reporting between phases
+
+Phases 3 and 4 are the long ones, and a ritual that gates only at the start goes dark for hours.
+At every phase boundary, and whenever you take a decision the operator might reverse, post one or
+two lines: what you decided, what it cost, what the alternative was. `gated` waits for a reply;
+`checkpoint` posts and continues; `autonomous` posts and continues, stopping only for anything
+irreversible, security-relevant, or outside the agreed scope. Batching these into the closing
+report is the failure mode — a decision raised at the time costs a sentence, the same decision
+raised fourteen hours later costs a rewrite.
 
 ## Model escalation
 
