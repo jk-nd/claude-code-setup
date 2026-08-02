@@ -40,13 +40,17 @@ report. Stop for anything irreversible, security-relevant, or outside the agreed
 Operator involvement: '${mode}' is not a recognised mode (gated|checkpoint|autonomous). Ask the
 operator which they want and rewrite ${mode_file}." ;;
   esac
+  ctx="${ctx}
+The operator can change this at any time in plain words (\"check in more often\", \"just run\") —
+rewrite ${mode_file} when they do, and confirm it. Do not ask again unless they raise it."
 else
   ctx="${ctx}
 Operator involvement is NOT SET. Before starting the first substantial piece of work, ask the
 operator how involved they want to be — gated (approve approach, criteria, and every merge),
 checkpoint (approve approach and criteria, then reports at phase boundaries), or autonomous
 (approve the approach, then run and surface reversible decisions as they happen). Write the single
-word to ${mode_file} so later sessions inherit it. Ask once; do not re-ask every session."
+word to ${mode_file} so later sessions inherit it, and tell the operator you have saved it.
+Ask once; do not re-ask every session."
 fi
 
 if command -v jq >/dev/null 2>&1; then

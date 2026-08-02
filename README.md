@@ -61,6 +61,25 @@ subagent — prefer per-session `/model` and per-dispatch escalation. The bigges
 structural: two ephemeral agents instead of nine standing ones, and docs merges that never invoke a
 model at all.
 
+## How involved do you want to be?
+
+You should never have to remember this — on a repo where it isn't set, the session **asks you
+before it starts the first real piece of work** and records your answer. But so it's written down
+somewhere you can find it:
+
+| `.claude/involvement` | What the session does |
+| --- | --- |
+| `gated` | Waits for you at the approach, at the criteria, and before every merge. Closest to how v3 behaved. |
+| `checkpoint` | Waits at the approach and the criteria; after that reports at each phase boundary and keeps going. Stops mid-phase only for something hard to reverse. |
+| `autonomous` | Waits at the approach, then runs — surfacing each decision you might want to reverse *as it makes it*. Stops for anything irreversible, security-relevant, or out of scope. |
+
+Set it directly (`echo checkpoint > .claude/involvement`), or just tell the session in plain words
+at any time — "check in with me more often", "stop asking, just run" — and it rewrites the file.
+
+Without this, a long run front-loads its questions into the design phase and then goes quiet for
+hours. That is right for some operators and wrong for others, and it is not the kind of thing a
+harness should guess.
+
 ## Operating model in five lines
 
 One mind per unit of work, dispatched to a background `implementer` on its own worktree so your TUI
